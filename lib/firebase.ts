@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator, enableNetwork, disableNetwork } from 'firebase/firestore';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
+// import { getStorage, connectStorageEmulator } from 'firebase/storage'; // ← この行をコメントアウト
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,14 +18,14 @@ const app = initializeApp(firebaseConfig);
 // サービス初期化
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
+// export const storage = getStorage(app); // ← この行をコメントアウト
 
 // 開発環境でのエミュレーター接続
 if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
   try {
     connectAuthEmulator(auth, 'http://localhost:9099');
     connectFirestoreEmulator(db, 'localhost', 8080);
-    connectStorageEmulator(storage, 'localhost', 9199);
+    // connectStorageEmulator(storage, 'localhost', 9199); // ← この行をコメントアウト
   } catch (error) {
     console.log('Emulator already connected');
   }
