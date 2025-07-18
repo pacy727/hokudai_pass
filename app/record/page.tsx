@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Subject } from '@/types/study';
-import { Clock, BookOpen, Target, MessageCircle } from 'lucide-react';
+import { Clock, BookOpen, Target, MessageCircle, RefreshCw } from 'lucide-react';
 
 export default function RecordPage() {
   const router = useRouter();
@@ -28,6 +28,7 @@ export default function RecordPage() {
   const [content, setContent] = useState('');
   const [details, setDetails] = useState('');
   const [memo, setMemo] = useState('');
+  const [shouldReview, setShouldReview] = useState(false); // 復習リスト登録フラグ
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -65,7 +66,8 @@ export default function RecordPage() {
     setIsSubmitting(true);
     
     try {
-      const recordData = {
+      // undefined を除去してデータを作成
+      const recordData: any = {
         userId: user.uid,
         studyDate: timerData?.studyDate || new Date().toISOString().split('T')[0],
         subject: (timerData?.subject || '数学') as Subject,
@@ -73,15 +75,27 @@ export default function RecordPage() {
         startTime: timerData?.startTime || '00:00',
         endTime: timerData?.endTime || '01:00',
         content: content.trim(),
-        details: details.trim() || undefined,
-        memo: memo.trim() || undefined
+        shouldReview: shouldReview // 復習リスト登録フラグを追加
       };
+
+      // 空でない場合のみ追加（undefinedを回避）
+      if (details.trim()) {
+        recordData.details = details.trim();
+      }
+      
+      if (memo.trim()) {
+        recordData.memo = memo.trim();
+      }
+
+      console.log('Saving record data:', recordData); // デバッグ用
 
       await StudyRecordService.createRecord(recordData);
       
       toast({
         title: "記録完了！",
-        description: "勉強記録を保存しました。お疲れ様でした！",
+        description: shouldReview 
+          ? "勉強記録を保存し、復習リストに追加しました！" 
+          : "勉強記録を保存しました。お疲れ様でした！",
       });
 
       router.push('/');
@@ -89,7 +103,7 @@ export default function RecordPage() {
       console.error('Failed to save record:', error);
       toast({
         title: "エラー",
-        description: "記録の保存に失敗しました",
+        description: `記録の保存に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive"
       });
     } finally {
@@ -178,7 +192,7 @@ export default function RecordPage() {
             <div className="space-y-2">
               <Label htmlFor="memo" className="text-base flex items-center gap-2">
                 <MessageCircle className="w-4 h-4" />
-                今日の勉強はどうでしたか？（任意）
+                今日の勉強の感想（任意）
               </Label>
               <Textarea
                 id="memo"
@@ -188,6 +202,26 @@ export default function RecordPage() {
                 rows={2}
                 className="text-base"
               />
+            </div>
+
+            {/* 復習リスト登録チェックボックス */}
+            <div className="space-y-2">
+              <div className="flex items-center space-x-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <input
+                  type="checkbox"
+                  id="shouldReview"
+                  checked={shouldReview}
+                  onChange={(e) => setShouldReview(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <Label htmlFor="shouldReview" className="text-base flex items-center gap-2 cursor-pointer">
+                  <RefreshCw className="w-4 h-4 text-blue-600" />
+                  復習リストに登録する
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground ml-8">
+                チェックすると、この学習内容が復習リストに追加され、後日復習の通知を受け取れます
+              </p>
             </div>
 
             {/* 送信ボタン */}
@@ -204,7 +238,10 @@ export default function RecordPage() {
                     保存中...
                   </>
                 ) : (
-                  "💾 記録完了してホームに戻る"
+                  <>
+                    💾 記録完了してホームに戻る
+                    {shouldReview && <span className="ml-2">（復習リスト登録済み）</span>}
+                  </>
                 )}
               </Button>
               
@@ -238,6 +275,7 @@ export default function RecordPage() {
               <li>• 単元名は具体的に（例：二次関数の最大値・最小値）</li>
               <li>• 詳細には解いた問題数や理解度を記録</li>
               <li>• 感想には次回への改善点も書いてみよう</li>
+              <li>• 復習したい内容は「復習リスト登録」をチェック</li>
             </ul>
           </div>
         </CardContent>

@@ -1,4 +1,4 @@
-export type Subject = '数学' | '英語' | '国語' | '理科' | '社会';
+export type Subject = '数学' | '英語' | '国語' | '情報' | '理科' | '理科1' | '理科2' | '社会' | '社会1' | '社会2';
 
 export interface StudyRecord {
   id: string;
@@ -13,6 +13,7 @@ export interface StudyRecord {
   memo?: string;
   createdAt: Date;
   sessionId?: string; // タイマー連携用
+  shouldReview?: boolean; // 復習リスト登録フラグ（新規追加）
 }
 
 export interface StudyGoal {

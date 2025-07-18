@@ -17,72 +17,7 @@ import { db, collections } from '../firebase';
 import { RealtimeStudyStatus, StudyDeclaration } from '@/types/realtime';
 
 export class RealtimeService {
-  // 宣言にリアクション追加
-  static async addReactionToDeclaration(
-    declarationId: string, 
-    userId: string, 
-    emoji: string
-  ): Promise<void> {
-    const docRef = doc(db, collections.declarations, declarationId);
-    await updateDoc(docRef, {
-      [`reactions.${userId}`]: emoji,
-      updatedAt: Timestamp.now()
-    });
-  }
-
-  // 宣言完了更新
-  static async completeDeclaration(
-    declarationId: string, 
-    actualHours: number
-  ): Promise<void> {
-    const docRef = doc(db, collections.declarations, declarationId);
-    await updateDoc(docRef, {
-      completed: true,
-      actualHours,
-      updatedAt: Timestamp.now()
-    });
-  }
-
-  // アクティブなタイマー保存
-  static async saveActiveTimer(
-    userId: string, 
-    timerData: {
-      sessionId: string;
-      subject: string;
-      startTime: Date;
-      elapsedTime: number;
-    }
-  ): Promise<void> {
-    const docRef = doc(db, collections.activeTimers, userId);
-    await setDoc(docRef, {
-      ...timerData,
-      startTime: Timestamp.fromDate(timerData.startTime),
-      lastUpdated: Timestamp.now()
-    });
-  }
-
-  // アクティブなタイマー取得
-  static async getActiveTimer(userId: string): Promise<any | null> {
-    const docRef = doc(db, collections.activeTimers, userId);
-    const docSnap = await getDoc(docRef);
-    
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        ...data,
-        startTime: data.startTime.toDate(),
-        lastUpdated: data.lastUpdated.toDate()
-      };
-    }
-    return null;
-  }
-
-  // アクティブなタイマー削除
-  static async clearActiveTimer(userId: string): Promise<void> {
-    const docRef = doc(db, collections.activeTimers, userId);
-    await deleteDoc(docRef);
-  }
-} 学習状況更新
+  // 学習状況更新
   static async updateStudyStatus(
     userId: string, 
     userName: string, 
@@ -157,4 +92,69 @@ export class RealtimeService {
     })) as StudyDeclaration[];
   }
 
-  //
+  // 宣言にリアクション追加
+  static async addReactionToDeclaration(
+    declarationId: string, 
+    userId: string, 
+    emoji: string
+  ): Promise<void> {
+    const docRef = doc(db, collections.declarations, declarationId);
+    await updateDoc(docRef, {
+      [`reactions.${userId}`]: emoji,
+      updatedAt: Timestamp.now()
+    });
+  }
+
+  // 宣言完了更新
+  static async completeDeclaration(
+    declarationId: string, 
+    actualHours: number
+  ): Promise<void> {
+    const docRef = doc(db, collections.declarations, declarationId);
+    await updateDoc(docRef, {
+      completed: true,
+      actualHours,
+      updatedAt: Timestamp.now()
+    });
+  }
+
+  // アクティブなタイマー保存
+  static async saveActiveTimer(
+    userId: string, 
+    timerData: {
+      sessionId: string;
+      subject: string;
+      startTime: Date;
+      elapsedTime: number;
+    }
+  ): Promise<void> {
+    const docRef = doc(db, collections.activeTimers, userId);
+    await setDoc(docRef, {
+      ...timerData,
+      startTime: Timestamp.fromDate(timerData.startTime),
+      lastUpdated: Timestamp.now()
+    });
+  }
+
+  // アクティブなタイマー取得
+  static async getActiveTimer(userId: string): Promise<any | null> {
+    const docRef = doc(db, collections.activeTimers, userId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return {
+        ...data,
+        startTime: data.startTime.toDate(),
+        lastUpdated: data.lastUpdated.toDate()
+      };
+    }
+    return null;
+  }
+
+  // アクティブなタイマー削除
+  static async clearActiveTimer(userId: string): Promise<void> {
+    const docRef = doc(db, collections.activeTimers, userId);
+    await deleteDoc(docRef);
+  }
+}

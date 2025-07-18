@@ -1,3 +1,5 @@
+"use client"
+
 import { create } from 'zustand';
 import { Subject } from '@/types/study';
 
@@ -7,8 +9,9 @@ interface TimerState {
   elapsedTime: number;
   subject: Subject | null;
   sessionId: string | null;
-  startTime: Date | null;
+  startTime: number | null; // timestamp
   pausedTime: number;
+  totalPausedTime: number; // 累積一時停止時間
   
   // Actions
   startTimer: (subject: Subject, sessionId: string) => void;
@@ -17,6 +20,8 @@ interface TimerState {
   stopTimer: () => void;
   updateElapsedTime: (time: number) => void;
   resetTimer: () => void;
+  setStartTime: (time: number) => void;
+  addPausedTime: (time: number) => void;
 }
 
 export const useTimerStore = create<TimerState>((set, get) => ({
@@ -27,27 +32,26 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   sessionId: null,
   startTime: null,
   pausedTime: 0,
+  totalPausedTime: 0,
   
   startTimer: (subject, sessionId) => set({
     isRunning: true,
     isPaused: false,
     subject,
     sessionId,
-    startTime: new Date(),
     elapsedTime: 0,
-    pausedTime: 0
+    pausedTime: 0,
+    totalPausedTime: 0
   }),
   
   pauseTimer: () => set((state) => ({
     isPaused: true,
-    isRunning: false,
-    pausedTime: state.pausedTime + (Date.now() - (state.startTime?.getTime() || 0)) / 1000
+    isRunning: false
   })),
   
   resumeTimer: () => set({
     isPaused: false,
-    isRunning: true,
-    startTime: new Date()
+    isRunning: true
   }),
   
   stopTimer: () => set({
@@ -64,6 +68,13 @@ export const useTimerStore = create<TimerState>((set, get) => ({
     subject: null,
     sessionId: null,
     startTime: null,
-    pausedTime: 0
-  })
+    pausedTime: 0,
+    totalPausedTime: 0
+  }),
+
+  setStartTime: (time) => set({ startTime: time }),
+  
+  addPausedTime: (time) => set((state) => ({ 
+    totalPausedTime: state.totalPausedTime + time 
+  }))
 }));

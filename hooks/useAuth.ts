@@ -1,3 +1,5 @@
+"use client"
+
 import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -5,77 +7,140 @@ import { auth, db, collections } from '@/lib/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { User } from '@/types/auth';
 
+// グローバル変数で初期化を管理（React Strict Mode 対応）
+let authInitialized = false;
+let authUnsubscribe: (() => void) | null = null;
+
 export const useAuth = () => {
-  const { user, isLoading, error, setUser, setLoading, setError } = useAuthStore();
+  const store = useAuthStore();
   
   useEffect(() => {
-    setLoading(true);
+    // 既に初期化済みなら何もしない
+    if (authInitialized) {
+      console.log('🔄 Auth already initialized, skipping');
+      return;
+    }
     
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      try {
-        if (firebaseUser) {
-          // ユーザー情報をFirestoreから取得
+    console.log('🚀 useAuth: GLOBAL initialization');
+    authInitialized = true;
+    
+    // 5秒後のタイムアウト設定
+    const timeout = setTimeout(() => {
+      console.log('⏰ Auth timeout - forcing loading false');
+      store.setLoading(false);
+    }, 5000);
+    
+    store.setLoading(true);
+    
+    authUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('🔍 onAuthStateChanged triggered, user exists:', !!firebaseUser);
+      clearTimeout(timeout); // タイムアウトをクリア
+      
+      if (firebaseUser) {
+        console.log('✅ User found, fetching user data from Firestore');
+        
+        try {
+          // Firestoreからユーザー設定を取得
           const userDoc = await getDoc(doc(db, collections.users, firebaseUser.uid));
+          
+          let basicUser: User;
+          
           if (userDoc.exists()) {
             const userData = userDoc.data();
-            setUser({
+            console.log('📄 User data from Firestore:', userData);
+            
+            // Firestoreのデータを使用
+            basicUser = {
               uid: firebaseUser.uid,
               email: firebaseUser.email!,
-              displayName: firebaseUser.displayName || userData.displayName,
-              photoURL: firebaseUser.photoURL,
+              displayName: userData.displayName || firebaseUser.displayName || 'ユーザー',
+              photoURL: firebaseUser.photoURL || undefined,
               createdAt: userData.createdAt?.toDate() || new Date(),
               role: userData.role || 'student',
               grade: userData.grade,
-              targetUniversity: userData.targetUniversity || '',
+              targetUniversity: userData.targetUniversity || '北海道大学',
               studyGoal: userData.studyGoal || {
                 totalHours: 1500,
                 dailyHours: 8,
                 subjects: {
-                  数学: 400,
                   英語: 350,
+                  数学: 400,
                   国語: 300,
-                  理科: 350,
-                  社会: 250
+                  情報: 200,
+                  理科: 350
                 }
-              }
-            } as User);
+              },
+              // 設定項目（デフォルト値付き）
+              course: userData.course || 'science',
+              weeklyTarget: userData.weeklyTarget || 56,
+              customSubjects: userData.customSubjects || {},
+              subjectSelection: userData.subjectSelection || {}
+            };
           } else {
-            // 新規ユーザーの場合、基本情報のみ設定
-            setUser({
+            console.log('⚠️ No user document found, creating default user');
+            // 新規ユーザーの場合のデフォルト
+            basicUser = {
               uid: firebaseUser.uid,
               email: firebaseUser.email!,
               displayName: firebaseUser.displayName || 'ユーザー',
-              photoURL: firebaseUser.photoURL,
+              photoURL: firebaseUser.photoURL || undefined,
               createdAt: new Date(),
               role: 'student',
-              targetUniversity: '',
+              targetUniversity: '北海道大学',
               studyGoal: {
                 totalHours: 1500,
                 dailyHours: 8,
                 subjects: {
-                  数学: 400,
                   英語: 350,
+                  数学: 400,
                   国語: 300,
-                  理科: 350,
-                  社会: 250
+                  情報: 200,
+                  理科: 350
                 }
-              }
-            } as User);
+              },
+              course: 'science',
+              weeklyTarget: 56,
+              customSubjects: {},
+              subjectSelection: {}
+            };
           }
-        } else {
-          setUser(null);
+          
+          console.log('✅ Final user data:', basicUser);
+          store.setUser(basicUser);
+          store.setError(null);
+          
+        } catch (error) {
+          console.error('❌ Error fetching user data:', error);
+          store.setError('ユーザー情報の取得に失敗しました');
+          store.setUser(null);
         }
-        setError(null);
-      } catch (err) {
-        console.error('Auth error:', err);
-        setError(err instanceof Error ? err.message : 'Authentication error');
-      } finally {
-        setLoading(false);
+      } else {
+        console.log('❌ No user found - user not logged in');
+        store.setUser(null);
+        store.setError(null);
       }
+      
+      store.setLoading(false);
+      console.log('✅ Auth check completed');
     });
     
-    return () => unsubscribe();
-  }, [setUser, setLoading, setError]);
+    console.log('🎯 Auth listener set up');
+    
+    return () => {
+      // クリーンアップは何もしない（グローバル管理のため）
+      console.log('🧹 useAuth cleanup (no-op)');
+    };
+  }, []); // 依存関係なし
   
-  return { user, isLoading, error };
+  console.log('📊 useAuth state:', { 
+    hasUser: !!store.user, 
+    isLoading: store.isLoading,
+    hasError: !!store.error 
+  });
+  
+  return {
+    user: store.user,
+    isLoading: store.isLoading,
+    error: store.error
+  };
 };

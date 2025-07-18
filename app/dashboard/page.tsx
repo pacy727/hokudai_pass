@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeStudyStatus, useDeclarations } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Users, MessageSquare, TrendingUp, Heart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
   const { statuses, isLoading: statusLoading } = useRealtimeStudyStatus();
   const { declarations, isLoading: declarationLoading, postDeclaration, addReaction } = useDeclarations();
@@ -22,6 +22,14 @@ export default function DashboardPage() {
   
   const [newDeclaration, setNewDeclaration] = useState('');
   const [isPosting, setIsPosting] = useState(false);
+
+  // useEffect でリダイレクト処理（レンダリング中の状態更新を回避）
+  useEffect(() => {
+    if (!isLoading && !user) {
+      console.log('🔄 Redirecting to login from dashboard');
+      router.push('/login');
+    }
+  }, [isLoading, user, router]);
 
   const handlePostDeclaration = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,17 +75,24 @@ export default function DashboardPage() {
     }
   };
 
-  if (!user) {
-    router.push('/login');
-    return null;
-  }
-
-  if (statusLoading || declarationLoading) {
+  // ローディング中
+  if (isLoading || statusLoading || declarationLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p>読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ユーザー未ログイン（リダイレクト処理中）
+  if (!user) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="text-center">
+          <p>リダイレクト中...</p>
         </div>
       </div>
     );

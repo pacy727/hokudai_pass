@@ -24,13 +24,13 @@ export default function TimerPage() {
       return;
     }
 
-    // タイマーが停止状態なら自動開始
+    // タイマーが停止状態で、経過時間も0なら自動開始
     if (!timer.isRunning && !timer.isPaused && timer.elapsedTime === 0) {
       timer.startTimer(subject);
     }
   }, [subject, timer, router]);
 
-  const handlePause = () => {
+  const handlePauseResume = () => {
     if (timer.isRunning) {
       timer.pauseTimer();
     } else if (timer.isPaused) {
@@ -71,9 +71,20 @@ export default function TimerPage() {
       英語: 'bg-green-50 border-green-200',
       国語: 'bg-red-50 border-red-200',
       理科: 'bg-purple-50 border-purple-200',
-      社会: 'bg-orange-50 border-orange-200'
+      社会: 'bg-orange-50 border-orange-200',
+      情報: 'bg-gray-50 border-gray-200',
+      理科1: 'bg-gray-50 border-gray-200',
+      理科2: 'bg-gray-50 border-gray-200',
+      社会1: 'bg-gray-50 border-gray-200',
+      社会2: 'bg-gray-50 border-gray-200'
     };
     return colors[subject] || 'bg-gray-50 border-gray-200';
+  };
+
+  const getTimerStatus = () => {
+    if (timer.isRunning) return { text: "勉強中", color: "default", icon: "🟢" };
+    if (timer.isPaused) return { text: "一時停止中", color: "secondary", icon: "⏸️" };
+    return { text: "待機中", color: "outline", icon: "⚪" };
   };
 
   if (!subject) {
@@ -84,12 +95,14 @@ export default function TimerPage() {
     );
   }
 
+  const status = getTimerStatus();
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-md">
       <Card className={`${getSubjectColor(subject)}`}>
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">
-            ⏱️ {subject} 勉強中...
+            ⏱️ {subject} 学習タイマー
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             集中して頑張りましょう！
@@ -102,12 +115,14 @@ export default function TimerPage() {
               {timer.formatTime(timer.elapsedTime)}
             </div>
             <Badge 
-              variant={timer.isRunning ? "default" : "secondary"}
+              variant={status.color as any}
               className="text-sm px-3 py-1"
             >
-              {timer.isRunning ? "勉強中" : timer.isPaused ? "一時停止中" : "待機中"}
+              {status.icon} {status.text}
             </Badge>
           </div>
+
+
 
           {/* リアルタイム表示通知 */}
           <div className="bg-green-50 p-3 rounded-lg text-center border border-green-200">
@@ -115,7 +130,7 @@ export default function TimerPage() {
               📍 現在学習中として表示されています
             </p>
             <p className="text-xs text-green-600 mt-1">
-              🟢 {user?.displayName} ({subject} - {timer.formatTime(timer.elapsedTime)})
+              {status.icon} {user?.displayName} ({subject} - {timer.formatTime(timer.elapsedTime)})
             </p>
           </div>
 
@@ -123,19 +138,25 @@ export default function TimerPage() {
           <div className="grid grid-cols-2 gap-3">
             <Button
               variant={timer.isRunning ? "secondary" : "default"}
-              onClick={handlePause}
+              onClick={handlePauseResume}
               className="h-14 text-base"
               size="lg"
+              disabled={!timer.isRunning && !timer.isPaused}
             >
               {timer.isRunning ? (
                 <>
                   <Pause className="w-5 h-5 mr-2" />
                   一時停止
                 </>
-              ) : (
+              ) : timer.isPaused ? (
                 <>
                   <Play className="w-5 h-5 mr-2" />
                   再開
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5 mr-2" />
+                  開始
                 </>
               )}
             </Button>
@@ -144,6 +165,7 @@ export default function TimerPage() {
               onClick={handleStop}
               className="h-14 text-base"
               size="lg"
+              disabled={timer.elapsedTime === 0}
             >
               <Square className="w-5 h-5 mr-2" />
               勉強終了
@@ -171,6 +193,7 @@ export default function TimerPage() {
               variant="outline" 
               onClick={handleReset}
               className="h-12"
+              disabled={timer.elapsedTime === 0}
             >
               <RotateCcw className="w-4 h-4 mr-1" />
               リセット
@@ -186,11 +209,21 @@ export default function TimerPage() {
               現在の進捗: {timer.formatTime(timer.elapsedTime)} / 8:00:00
             </p>
           </div>
+
+          {/* 操作ヒント */}
+          <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+            <h4 className="text-sm font-semibold text-yellow-800 mb-1">💡 操作ヒント</h4>
+            <ul className="text-xs text-yellow-700 space-y-1">
+              <li>• 一時停止中も学習時間は正確に記録されます</li>
+              <li>• ホームボタンでバックグラウンド継続可能</li>
+              <li>• 勉強終了で自動的に記録ページに移動</li>
+            </ul>
+          </div>
         </CardContent>
       </Card>
 
       {/* 背景でタイマーが動いている時の注意書き */}
-      {timer.isRunning && (
+      {(timer.isRunning || timer.isPaused) && (
         <div className="mt-4 text-center">
           <p className="text-sm text-muted-foreground">
             💡 このタブを閉じてもタイマーは継続されます

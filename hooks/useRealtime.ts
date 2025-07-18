@@ -1,3 +1,5 @@
+"use client"
+
 import { useEffect, useState } from 'react';
 import { RealtimeService } from '@/lib/db/realtime';
 import { RealtimeStudyStatus, StudyDeclaration } from '@/types/realtime';

@@ -48,8 +48,44 @@ export const getDateRange = (days: number): string[] => {
   return dates;
 };
 
+// 週の日付取得（月曜日開始）
 export const getWeekDates = (): string[] => {
-  return getDateRange(7);
+  const today = new Date();
+  const currentDay = today.getDay(); // 0=日曜日, 1=月曜日, ...
+  
+  // 月曜日からの日数を計算（日曜日の場合は6日前）
+  const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+  
+  const dates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today.getTime() - (daysFromMonday - i) * 24 * 60 * 60 * 1000);
+    dates.push(date.toISOString().split('T')[0]);
+  }
+  
+  return dates;
+};
+
+// 今週の月曜日の日付を取得
+export const getThisWeekMonday = (): Date => {
+  const today = new Date();
+  const currentDay = today.getDay();
+  const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+  
+  return new Date(today.getTime() - daysFromMonday * 24 * 60 * 60 * 1000);
+};
+
+// 今週の日曜日の日付を取得
+export const getThisWeekSunday = (): Date => {
+  const monday = getThisWeekMonday();
+  return new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000);
+};
+
+// 指定した日付が今週内かどうかチェック
+export const isThisWeek = (date: Date): boolean => {
+  const monday = getThisWeekMonday();
+  const sunday = getThisWeekSunday();
+  
+  return date >= monday && date <= sunday;
 };
 
 export const getMonthCalendar = (year: number, month: number): Date[][] => {

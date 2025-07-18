@@ -1,7 +1,6 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, enableNetwork, disableNetwork } from 'firebase/firestore';
-// import { getStorage, connectStorageEmulator } from 'firebase/storage'; // ← この行をコメントアウト
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore, enableNetwork, disableNetwork } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -12,24 +11,12 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Firebase初期化
-const app = initializeApp(firebaseConfig);
+// Firebase初期化（重複初期化を防ぐ）
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// サービス初期化
+// サービス初期化（本番Firebase使用）
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-// export const storage = getStorage(app); // ← この行をコメントアウト
-
-// 開発環境でのエミュレーター接続
-if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
-  try {
-    connectAuthEmulator(auth, 'http://localhost:9099');
-    connectFirestoreEmulator(db, 'localhost', 8080);
-    // connectStorageEmulator(storage, 'localhost', 9199); // ← この行をコメントアウト
-  } catch (error) {
-    console.log('Emulator already connected');
-  }
-}
 
 // オフライン対応
 export const enableOfflineSupport = () => enableNetwork(db);
