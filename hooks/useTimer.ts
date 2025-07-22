@@ -77,14 +77,15 @@ export const useTimer = () => {
     // アクティブタイマーをクリア
     await RealtimeService.clearActiveTimer(user.uid);
     
-    // 記録ページへのデータ準備
-    const studyHours = Math.round((finalElapsedTime / 3600) * 100) / 100;
+    // 記録ページへのデータ準備（分単位で保存）
+    const studyMinutes = Math.round(finalElapsedTime / 60); // 秒→分
     const now = new Date();
     const startTime = new Date(now.getTime() - finalElapsedTime * 1000);
     
     return {
       subject: timerStore.subject,
-      studyHours,
+      studyHours: studyMinutes / 60, // 表示用（互換性のため）
+      studyMinutes: studyMinutes, // 新しい分単位データ
       startTime: startTime.toLocaleTimeString('ja-JP', { 
         hour: '2-digit', 
         minute: '2-digit' 

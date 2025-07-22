@@ -11,14 +11,14 @@ import { StudyRecord, Subject, ChartData, StudyStats } from '@/types/study';
 import { ReviewService } from './reviewService';
 
 export class StudyRecordService {
-  // 記録作成（undefined値対策済み + 復習リスト自動生成）
+  // 記録作成（分単位で保存）
   static async createRecord(record: Omit<StudyRecord, 'id' | 'createdAt'>): Promise<string> {
     // undefined除去処理
     const cleanRecord: any = {
       userId: record.userId,
       studyDate: record.studyDate,
       subject: record.subject,
-      studyHours: record.studyHours,
+      studyMinutes: record.studyMinutes, // 分単位で保存
       startTime: record.startTime,
       endTime: record.endTime,
       content: record.content,
@@ -85,6 +85,8 @@ export class StudyRecordService {
         return {
           id: doc.id,
           ...data,
+          // データベースの値を使用（分単位）
+          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0), // 互換性のため
           createdAt: data.createdAt?.toDate() || new Date()
         };
       }) as StudyRecord[];
@@ -129,6 +131,8 @@ export class StudyRecordService {
         return {
           id: doc.id,
           ...data,
+          // データベースの値を使用（分単位）
+          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0), // 互換性のため
           createdAt: data.createdAt?.toDate() || new Date()
         };
       }) as StudyRecord[];
@@ -180,10 +184,11 @@ export class StudyRecordService {
       
       console.log('📅 Week start date (Monday):', weekStartDate.toISOString().split('T')[0]);
 
-      // 総学習時間
+      // 総学習時間（分→時間に変換）
       const totalHours = records.reduce((sum, record) => {
-        const hours = record.studyHours || 0;
-        console.log(`Adding ${hours}h from ${record.studyDate} (${record.subject})`);
+        const minutes = record.studyMinutes || 0;
+        const hours = minutes / 60;
+        console.log(`Adding ${minutes}min (${hours.toFixed(2)}h) from ${record.studyDate} (${record.subject})`);
         return sum + hours;
       }, 0);
       
@@ -194,31 +199,37 @@ export class StudyRecordService {
         const recordDate = new Date(record.studyDate + 'T00:00:00');
         const isThisWeek = recordDate >= weekStartDate;
         if (isThisWeek) {
-          console.log(`📅 Week record: ${record.studyDate} - ${record.studyHours}h`);
+          const hours = (record.studyMinutes || 0) / 60;
+          console.log(`📅 Week record: ${record.studyDate} - ${record.studyMinutes}min (${hours.toFixed(2)}h)`);
         }
         return isThisWeek;
       });
       
-      const weeklyHours = weeklyRecords.reduce((sum, record) => sum + (record.studyHours || 0), 0);
+      const weeklyHours = weeklyRecords.reduce((sum, record) => {
+        const hours = (record.studyMinutes || 0) / 60;
+        return sum + hours;
+      }, 0);
       console.log('📅 Weekly hours:', weeklyHours, 'from', weeklyRecords.length, 'records');
 
-      // 教科別学習時間
+      // 教科別学習時間（分→時間に変換）
       const subjectHours = records.reduce((acc, record) => {
         if (record.subject) {
-          acc[record.subject] = (acc[record.subject] || 0) + (record.studyHours || 0);
+          const hours = (record.studyMinutes || 0) / 60;
+          acc[record.subject] = (acc[record.subject] || 0) + hours;
         }
         return acc;
       }, {} as Record<Subject, number>);
       
       console.log('📚 Subject hours:', subjectHours);
 
-      // 過去7日分のデータ
+      // 過去7日分のデータ（分→時間に変換）
       const recentDays: ChartData[] = [];
       for (let i = 6; i >= 0; i--) {
         const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
         const dateStr = date.toISOString().split('T')[0];
         const dayRecords = records.filter(record => record.studyDate === dateStr);
-        const dayHours = dayRecords.reduce((sum, record) => sum + (record.studyHours || 0), 0);
+        const dayMinutes = dayRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
+        const dayHours = dayMinutes / 60;
         
         recentDays.push({
           date: dateStr,

@@ -66,8 +66,7 @@ export default function ProfilePage() {
       console.log('🔍 Loading data for user:', user.uid);
       console.log('📋 Available subjects:', availableSubjects);
       
-      // 各データを個別に取得してエラーを特定
-      console.log('🚀 Starting to fetch review items...');
+      // 各データを個別に取得
       const allReviews = await ReviewService.getReviewItems(user.uid);
       console.log('✅ Review items fetched:', allReviews.length);
       
@@ -107,7 +106,7 @@ export default function ProfilePage() {
         unit: record.content,
         content: record.details || record.content,
         studyType: 'practice' as const,
-        duration: record.studyHours * 60,
+        duration: record.studyMinutes || (record.studyMinutes ? record.studyMinutes * 60 : 0),
         understanding: 'good' as const,
         notes: record.memo,
         studyDate: new Date(record.studyDate),
@@ -244,265 +243,320 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
+        {/* ヘッダー部分にタブを統合 */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">学習カルテ</h1>
-          <p className="text-gray-600">復習の進捗を管理して、効率的な学習を進めましょう</p>
-        </div>
+          <p className="text-gray-600 mb-6">復習の進捗を管理して、効率的な学習を進めましょう</p>
+          
+          {/* ヘッダー内のタブリスト */}
+          <Tabs defaultValue="review" className="w-full">
+            <TabsList className="grid w-full grid-cols-4 h-12">
+              <TabsTrigger value="review" className="text-sm">復習管理</TabsTrigger>
+              <TabsTrigger value="completed" className="text-sm">復習完了</TabsTrigger>
+              <TabsTrigger value="timeline" className="text-sm">タイムライン</TabsTrigger>
+              <TabsTrigger value="subjects" className="text-sm">学習ログ</TabsTrigger>
+            </TabsList>
 
-        <Tabs defaultValue="review" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="review">復習管理</TabsTrigger>
-            <TabsTrigger value="completed">復習完了</TabsTrigger>
-            <TabsTrigger value="logs">学習ログ</TabsTrigger>
-            <TabsTrigger value="progress">進捗分析</TabsTrigger>
-          </TabsList>
+            {/* タブコンテンツエリア */}
+            <div className="mt-6 space-y-6">
+              {/* 復習管理タブ */}
+              <TabsContent value="review" className="space-y-6">
+                <TodayTasks
+                  tasks={todayTasks}
+                  onTaskSelect={handleTaskSelect}
+                  getSubjectDisplayName={getSubjectDisplayName}
+                />
 
-          {/* 復習管理タブ（本日のタスク + 復習リスト統合） */}
-          <TabsContent value="review" className="space-y-6">
-            {/* 本日のタスク */}
-            <TodayTasks
-              tasks={todayTasks}
-              onTaskSelect={handleTaskSelect}
-              getSubjectDisplayName={getSubjectDisplayName}
-            />
-
-            {/* 復習リスト */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Calendar className="h-5 w-5" />
-                  <span>復習リスト</span>
-                  <Badge variant="outline" className="ml-2">
-                    {activeReviewItems.length}件
-                  </Badge>
-                </CardTitle>
-                <p className="text-sm text-gray-600">
-                  学習記録で「復習リスト登録」をチェックした内容の復習ワークフロー
-                </p>
-              </CardHeader>
-              <CardContent>
-                {activeReviewItems.length === 0 ? (
-                  <div className="text-center py-8">
-                    <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">復習項目がありません</p>
-                    <p className="text-sm text-gray-400 mb-4">
-                      学習記録を保存する際に「復習リスト登録」をチェックすると、自動で復習リストに追加されます
-                    </p>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => router.push('/record')}
-                      className="mt-2"
-                    >
-                      学習記録を入力する
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {activeReviewItems.map((item) => (
-                      <ReviewWorkflow
-                        key={item.id}
-                        reviewItem={item}
-                        onStageSelect={handleStageSelect}
-                        getSubjectDisplayName={getSubjectDisplayName}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* 復習完了タブ */}
-          <TabsContent value="completed" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Award className="h-5 w-5 text-green-600" />
-                  <span>復習完了リスト</span>
-                  <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
-                    {completedReviewItems.length}件完了
-                  </Badge>
-                </CardTitle>
-                <p className="text-sm text-gray-600">
-                  全ての復習段階を完了した項目一覧
-                </p>
-              </CardHeader>
-              <CardContent>
-                {completedReviewItems.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Award className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">完了した復習項目がありません</p>
-                    <p className="text-sm text-gray-400">
-                      復習を完了すると、ここに表示されます
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {completedReviewItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-4 border rounded-lg bg-green-50 border-green-200"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <Badge variant="outline">
-                                {getSubjectDisplayName(item.subject)}
-                              </Badge>
-                              <Badge variant="default" className="bg-green-600">
-                                復習完了
-                              </Badge>
-                              <span className="text-sm text-gray-500">
-                                完了日: {item.updatedAt.toLocaleDateString()}
-                              </span>
-                            </div>
-                            <h3 className="font-semibold text-lg mb-1">{item.unit}</h3>
-                            <p className="text-gray-600 mb-2">{item.content}</p>
-                            
-                            {/* 復習履歴 */}
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
-                              {item.progress.map((p) => (
-                                <div key={p.stage} className="flex items-center space-x-1">
-                                  <CheckCircle className="h-3 w-3 text-green-600" />
-                                  <span>第{p.stage}回: {p.understanding}点</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* 学習ログタブ */}
-          <TabsContent value="logs" className="space-y-6">
-            {availableSubjects.map((subject) => {
-              const subjectLogs = groupedStudyLogs[subject] || [];
-              if (subjectLogs.length === 0) return null;
-
-              return (
-                <Card key={subject}>
+                <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <BookOpen className="h-5 w-5" />
-                      <span>{getSubjectDisplayName(subject)}</span>
-                      <Badge variant="outline">{subjectLogs.length}件</Badge>
+                      <Calendar className="h-5 w-5" />
+                      <span>復習リスト</span>
+                      <Badge variant="outline" className="ml-2">
+                        {activeReviewItems.length}件
+                      </Badge>
                     </CardTitle>
+                    <p className="text-sm text-gray-600">
+                      学習記録で「復習リスト登録」をチェックした内容の復習ワークフロー
+                    </p>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {subjectLogs.map((log) => (
-                        <div
-                          key={log.id}
-                          className="p-3 border rounded-lg bg-white"
+                    {activeReviewItems.length === 0 ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-500">復習項目がありません</p>
+                        <p className="text-sm text-gray-400 mb-4">
+                          学習記録を保存する際に「復習リスト登録」をチェックすると、自動で復習リストに追加されます
+                        </p>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => router.push('/record')}
+                          className="mt-2"
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center space-x-2">
-                              <Badge variant="outline">{log.unit}</Badge>
+                          学習記録を入力する
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {activeReviewItems.map((item) => (
+                          <ReviewWorkflow
+                            key={item.id}
+                            reviewItem={item}
+                            onStageSelect={handleStageSelect}
+                            getSubjectDisplayName={getSubjectDisplayName}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* 復習完了タブ */}
+              <TabsContent value="completed" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Award className="h-5 w-5 text-green-600" />
+                      <span>復習完了リスト</span>
+                      <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                        {completedReviewItems.length}件完了
+                      </Badge>
+                    </CardTitle>
+                    <p className="text-sm text-gray-600">
+                      全ての復習段階を完了した項目一覧
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {completedReviewItems.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Award className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-500">完了した復習項目がありません</p>
+                        <p className="text-sm text-gray-400">
+                          復習を完了すると、ここに表示されます
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {completedReviewItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="p-4 border rounded-lg bg-green-50 border-green-200"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-2">
+                                  <Badge variant="outline">
+                                    {getSubjectDisplayName(item.subject)}
+                                  </Badge>
+                                  <Badge variant="default" className="bg-green-600">
+                                    復習完了
+                                  </Badge>
+                                  <span className="text-sm text-gray-500">
+                                    完了日: {item.updatedAt.toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <h3 className="font-semibold text-lg mb-1">{item.unit}</h3>
+                                <p className="text-gray-600 mb-2">{item.content}</p>
+                                
+                                <div className="flex items-center space-x-4 text-sm text-gray-500">
+                                  {item.progress.map((p) => (
+                                    <div key={p.stage} className="flex items-center space-x-1">
+                                      <CheckCircle className="h-3 w-3 text-green-600" />
+                                      <span>第{p.stage}回: {p.understanding}点</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* タイムライン表示タブ */}
+              <TabsContent value="timeline" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Clock className="h-5 w-5" />
+                      <span>タイムライン</span>
+                      <Badge variant="outline">{studyLogs.length}件</Badge>
+                    </CardTitle>
+                    <p className="text-sm text-gray-600">
+                      復習リスト登録された学習記録の時系列表示
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {studyLogs.length === 0 ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-500">学習ログがありません</p>
+                        <p className="text-sm text-gray-400">
+                          学習記録で「復習リスト登録」をチェックすると、ここに表示されます
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {studyLogs.map((log) => (
+                          <div
+                            key={log.id}
+                            className="flex items-center justify-between p-3 bg-white border rounded-lg hover:shadow-sm transition-shadow"
+                          >
+                            <div className="flex items-center space-x-3 flex-1 min-w-0">
+                              <Badge 
+                                variant="outline" 
+                                className="flex-shrink-0 text-xs"
+                              >
+                                {getSubjectDisplayName(log.subject)}
+                              </Badge>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm truncate">
+                                  {log.unit}
+                                </div>
+                                {log.content !== log.unit && (
+                                  <div className="text-xs text-gray-500 truncate">
+                                    {log.content}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-3 flex-shrink-0 text-xs text-gray-500">
+                              <div className="flex items-center space-x-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{formatTime(log.duration)}</span>
+                              </div>
                               <Badge 
                                 variant="outline"
-                                className={getUnderstandingColor(log.understanding)}
+                                className={`text-xs ${getUnderstandingColor(log.understanding)}`}
                               >
                                 {getUnderstandingLabel(log.understanding)}
                               </Badge>
-                            </div>
-                            <div className="flex items-center space-x-2 text-sm text-gray-500">
-                              <Clock className="h-4 w-4" />
-                              <span>{formatTime(log.duration)}</span>
-                              <span>•</span>
-                              <span>{log.studyDate.toLocaleDateString()}</span>
+                              <span className="text-gray-400">
+                                {log.studyDate.toLocaleDateString('ja-JP', { 
+                                  month: 'short', 
+                                  day: 'numeric' 
+                                })}
+                              </span>
                             </div>
                           </div>
-                          <h4 className="font-medium mb-1">{log.content}</h4>
-                          {log.notes && (
-                            <p className="text-sm text-gray-600">{log.notes}</p>
-                          )}
+                        ))}
+                        
+                        <div className="text-center pt-2">
+                          <p className="text-xs text-gray-500">
+                            全{studyLogs.length}件の学習ログ
+                          </p>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
-              );
-            })}
-          </TabsContent>
+              </TabsContent>
 
-          {/* 進捗分析タブ */}
-          <TabsContent value="progress" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {studyProgress.map((progress) => (
-                <Card key={progress.subject}>
+              {/* 学習ログタブ（教科別表示） */}
+              <TabsContent value="subjects" className="space-y-6">
+                <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <TrendingUp className="h-5 w-5" />
-                      <span>{getSubjectDisplayName(progress.subject)}</span>
+                      <BookOpen className="h-5 w-5" />
+                      <span>学習ログ</span>
+                      <Badge variant="outline">{studyLogs.length}件</Badge>
                     </CardTitle>
+                    <p className="text-sm text-gray-600">
+                      復習リスト登録された学習記録の教科別表示
+                    </p>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* 単元進捗 */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">単元進捗</span>
-                        <span className="text-sm text-gray-500">
-                          {progress.completedUnits}/{progress.totalUnits}
-                        </span>
+                  <CardContent>
+                    {Object.keys(groupedStudyLogs).length === 0 ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-500">学習ログがありません</p>
+                        <p className="text-sm text-gray-400">
+                          学習記録で「復習リスト登録」をチェックすると、ここに表示されます
+                        </p>
                       </div>
-                      <Progress 
-                        value={progress.totalUnits > 0 ? (progress.completedUnits / progress.totalUnits) * 100 : 0}
-                        className="h-2"
-                      />
-                    </div>
+                    ) : (
+                      <div className="space-y-4 max-h-96 overflow-y-auto">
+                        {availableSubjects.map((subject) => {
+                          const subjectLogs = groupedStudyLogs[subject] || [];
+                          if (subjectLogs.length === 0) return null;
 
-                    {/* 復習状況 */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">未完了復習</span>
-                        <span className="text-sm font-medium">{progress.pendingReviews}件</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">期限切れ復習</span>
-                        <span className="text-sm font-medium text-red-600">{progress.overdueReviews}件</span>
-                      </div>
-                    </div>
+                          return (
+                            <div key={subject} className="border rounded-lg">
+                              <div className="bg-gray-50 px-4 py-2 border-b rounded-t-lg">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <Badge variant="default" className="text-xs">
+                                      {getSubjectDisplayName(subject)}
+                                    </Badge>
+                                    <span className="text-sm font-medium">
+                                      {subjectLogs.length}件
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    計{subjectLogs.reduce((sum, log) => sum + log.duration, 0)}分
+                                  </div>
+                                </div>
+                              </div>
 
-                    {/* 理解度 */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">平均理解度</span>
-                        <span className="text-sm text-gray-500">
-                          {progress.averageUnderstanding.toFixed(1)}/4.0
-                        </span>
-                      </div>
-                      <Progress 
-                        value={(progress.averageUnderstanding / 4) * 100}
-                        className="h-2"
-                      />
-                    </div>
+                              <div className="p-2 space-y-1">
+                                {subjectLogs.map((log) => (
+                                  <div
+                                    key={log.id}
+                                    className="flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors"
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm truncate">
+                                        {log.unit}
+                                      </div>
+                                      {log.content !== log.unit && (
+                                        <div className="text-xs text-gray-500 truncate">
+                                          {log.content}
+                                        </div>
+                                      )}
+                                      {log.notes && (
+                                        <div className="text-xs text-gray-400 truncate mt-1">
+                                          💭 {log.notes}
+                                        </div>
+                                      )}
+                                    </div>
 
-                    {/* 学習時間 */}
-                    <div className="pt-2 border-t">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">総学習時間</span>
-                        <span className="text-sm font-medium">{formatTime(progress.totalStudyTime)}</span>
+                                    <div className="flex items-center space-x-2 flex-shrink-0 text-xs">
+                                      <Badge 
+                                        variant="outline"
+                                        className={`text-xs ${getUnderstandingColor(log.understanding)}`}
+                                      >
+                                        {getUnderstandingLabel(log.understanding)}
+                                      </Badge>
+                                      <div className="flex items-center space-x-1 text-gray-500">
+                                        <Clock className="h-3 w-3" />
+                                        <span>{formatTime(log.duration)}</span>
+                                      </div>
+                                      <span className="text-gray-400">
+                                        {log.studyDate.toLocaleDateString('ja-JP', { 
+                                          month: 'short', 
+                                          day: 'numeric' 
+                                        })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                      {progress.lastStudyDate && (
-                        <div className="flex items-center justify-between mt-1">
-                          <span className="text-sm text-gray-600">最終学習</span>
-                          <span className="text-sm text-gray-500">
-                            {progress.lastStudyDate.toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
-              ))}
+              </TabsContent>
             </div>
-          </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
       </div>
 
       {/* 理解度入力モーダル */}

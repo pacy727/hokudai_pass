@@ -5,7 +5,7 @@ export interface StudyRecord {
   userId: string;
   studyDate: string; // YYYY-MM-DD
   subject: Subject;
-  studyHours: number;
+  studyMinutes: number; // 分単位で保存
   startTime: string; // HH:MM
   endTime: string; // HH:MM
   content: string;
@@ -13,7 +13,7 @@ export interface StudyRecord {
   memo?: string;
   createdAt: Date;
   sessionId?: string; // タイマー連携用
-  shouldReview?: boolean; // 復習リスト登録フラグ（新規追加）
+  shouldReview?: boolean; // 復習リスト登録フラグ
 }
 
 export interface StudyGoal {
