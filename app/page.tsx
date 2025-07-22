@@ -227,19 +227,13 @@ export default function ReportPage() {
         </Card>
       )}
 
-      {/* ヘッダー */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">
-            🎯 北大専科 - 学習管理
-          </CardTitle>
-          <p className="text-center text-muted-foreground">
-            こんにちは、{user.displayName}さん！
-            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-              {user.course === 'liberal' ? '📚 文系' : '🔬 理系'}
-            </span>
+      {/* 励ましメッセージ */}
+      <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+        <CardContent className="pt-6">
+          <p className="text-center text-green-800 font-medium">
+            {getRandomMotivationMessage()}
           </p>
-        </CardHeader>
+        </CardContent>
       </Card>
 
       {/* 今すぐ勉強開始！ */}
@@ -261,47 +255,6 @@ export default function ReportPage() {
           </p>
         </CardContent>
       </Card>
-
-      {/* 励ましメッセージ */}
-      <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-        <CardContent className="pt-6">
-          <p className="text-center text-green-800 font-medium">
-            {getRandomMotivationMessage()}
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* ナビゲーション */}
-      <div className="grid grid-cols-4 gap-2">
-        <Button 
-          variant="outline" 
-          onClick={() => router.push('/dashboard')}
-          className="h-12"
-        >
-          👥 メンバー
-        </Button>
-        <Button 
-          variant="outline" 
-          onClick={() => router.push('/record')}
-          className="h-12"
-        >
-          ✏️ 手動記録
-        </Button>
-        <Button 
-          variant="outline" 
-          onClick={() => router.push('/profile')}
-          className="h-12"
-        >
-          📊 カルテ
-        </Button>
-        <Button 
-          variant="outline" 
-          onClick={() => router.push('/settings')}
-          className="h-12"
-        >
-          ⚙️ 設定
-        </Button>
-      </div>
 
       {/* 今週の目標と学習ストリーク */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -402,23 +355,22 @@ export default function ReportPage() {
         </CardHeader>
         <CardContent>
           {recentRecords.length > 0 ? (
-            <div className="space-y-3">
-              {recentRecords.slice(0, 3).map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline">{record.subject}</Badge>
-                    <span className="text-sm">{record.content}</span>
+            <div className="space-y-2">
+              {recentRecords.slice(0, 5).map((record) => (
+                <div key={record.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">{record.subject}</Badge>
+                    <span className="truncate">{record.content}</span>
                   </div>
-                  <div className="text-right text-sm text-muted-foreground">
-                    <div>{record.studyMinutes}時間</div>
-                    <div>{record.studyDate}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {Math.round((record.studyMinutes || 0))}分・{record.studyDate}
                   </div>
                 </div>
               ))}
               <Button 
                 variant="ghost" 
-                onClick={() => router.push('/profile')} 
-                className="w-full text-sm"
+                onClick={() => router.push('/profile?tab=timeline')} 
+                className="w-full text-sm mt-2"
               >
                 すべての履歴を見る
               </Button>
