@@ -12,7 +12,11 @@ import { Badge } from '@/components/ui/badge';
 import { StudyStats, Subject, StudyRecord } from '@/types/study';
 import { TodayTask } from '@/types/review';
 import { useRouter } from 'next/navigation';
-import { Clock, Target, BookOpen, Flame, Calendar, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
+import { Clock, Target, BookOpen, Flame, Calendar, TrendingUp, AlertTriangle, Trophy, BarChart3 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+// 直近10日間の学習時間データ（ダミー）
+// 削除：実際のデータベースから取得するため不要
 
 export default function ReportPage() {
   const { user, isLoading } = useAuth();
@@ -24,6 +28,7 @@ export default function ReportPage() {
   const [statsError, setStatsError] = useState<string | null>(null);
   const [studyStreak, setStudyStreak] = useState(0);
   const [noStudyStreak, setNoStudyStreak] = useState(0);
+  const [chartData, setChartData] = useState<any[]>([]);
 
   // 30種類の励ましメッセージ
   const motivationMessages = [
@@ -76,6 +81,13 @@ export default function ReportPage() {
         const studyStats = await StudyRecordService.getStudyStats(user.uid);
         setStats(studyStats);
         
+        // 全ての学習記録を取得（チャート用）
+        const allRecords = await StudyRecordService.getRecordsByUser(user.uid);
+        
+        // チャートデータを生成
+        const chartData = generateChartData(allRecords);
+        setChartData(chartData);
+        
         // 最近の学習記録（10件取得して分析用）
         const records = await StudyRecordService.getRecordsByUser(user.uid, 10);
         setRecentRecords(records);
@@ -85,7 +97,7 @@ export default function ReportPage() {
         setTodayTasks(tasks);
         
         // 学習ストリーク計算
-        calculateStudyStreak(records);
+        calculateStudyStreak(allRecords);
         
       } catch (error) {
         console.error('❌ Error loading homepage data:', error);
@@ -100,6 +112,8 @@ export default function ReportPage() {
           },
           recentDays: []
         });
+        // エラー時は空のチャートデータを設定
+        setChartData(generateChartData([]));
       } finally {
         setIsLoadingStats(false);
       }
@@ -108,7 +122,39 @@ export default function ReportPage() {
     loadData();
   }, [user, isLoading, router]);
 
-  // 学習ストリーク計算（改良版）
+  // 直近10日間のチャートデータを生成
+  const generateChartData = (records: StudyRecord[]) => {
+    const today = new Date();
+    const chartData = [];
+    
+    // 日付ごとの学習時間を集計
+    const studyByDate: Record<string, number> = {};
+    
+    records.forEach(record => {
+      const date = record.studyDate;
+      if (!studyByDate[date]) {
+        studyByDate[date] = 0;
+      }
+      studyByDate[date] += record.studyMinutes || 0;
+    });
+    
+    // 直近10日間のデータを生成
+    for (let i = 9; i >= 0; i--) {
+      const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+      const dayOfWeek = dayNames[date.getDay()];
+      const shortDate = `${date.getMonth() + 1}/${date.getDate()}`;
+      
+      chartData.push({
+        date: shortDate,
+        minutes: studyByDate[dateStr] || 0,
+        dateLabel: `${shortDate}(${dayOfWeek})`
+      });
+    }
+    
+    return chartData;
+  };
   const calculateStudyStreak = (records: StudyRecord[]) => {
     if (records.length === 0) {
       setStudyStreak(0);
@@ -196,6 +242,22 @@ export default function ReportPage() {
     return { emoji: "🌱", title: "これから", description: "学習を始めましょう！" };
   };
 
+  // チャートのツールチップフォーマット
+  const formatTooltip = (value: number, name: string) => {
+    return [`${value}分`, '学習時間'];
+  };
+
+  // Y軸のティック値を60分刻みで生成
+  const generateYAxisTicks = (maxValue: number) => {
+    const ticks = [0];
+    let tick = 60;
+    while (tick <= maxValue + 60) {
+      ticks.push(tick);
+      tick += 60;
+    }
+    return ticks;
+  };
+
   if (isLoading || isLoadingStats) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -214,6 +276,10 @@ export default function ReportPage() {
   const urgentTasks = todayTasks.filter(t => t.isOverdue && t.daysPastDue && t.daysPastDue > 0);
   const todayDueTasks = todayTasks.filter(t => !t.isOverdue || !t.daysPastDue || t.daysPastDue === 0);
   const achievement = getStudyAchievement(stats?.totalHours || 0);
+  
+  // チャートの最大値を取得
+  const maxChartValue = chartData.length > 0 ? Math.max(...chartData.map(d => d.minutes)) : 0;
+  const yAxisTicks = generateYAxisTicks(maxChartValue);
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6 max-w-4xl">
@@ -226,6 +292,22 @@ export default function ReportPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ヘッダー */}
+      {/* <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl font-bold text-center">
+            🎯 北大専科 - 学習管理
+          </CardTitle>
+          <p className="text-center text-muted-foreground">
+            こんにちは、{user.displayName}さん！
+            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+              {user.course === 'liberal' ? '📚 文系' : '🔬 理系'}
+            </span>
+          </p>
+        </CardHeader>
+      </Card> */}
+
 
       {/* 励ましメッセージ */}
       <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
@@ -255,6 +337,44 @@ export default function ReportPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* 復習アラート */}
+      {todayTasks.length > 0 && (
+        <Card className={urgentTasks.length > 0 ? "border-red-200 bg-red-50" : "border-orange-200 bg-orange-50"}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AlertTriangle className={`w-5 h-5 ${urgentTasks.length > 0 ? 'text-red-600' : 'text-orange-600'}`} />
+              復習アラート
+              <Badge variant="destructive" className="ml-auto">
+                {todayTasks.length}件
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {urgentTasks.length > 0 && (
+                <div className="text-sm text-red-700">
+                  🔥 期限切れ {urgentTasks.length}件 - 優先的に復習しましょう
+                </div>
+              )}
+              {todayDueTasks.length > 0 && (
+                <div className="text-sm text-orange-700">
+                  ⚠️ 今日期限 {todayDueTasks.length}件
+                </div>
+              )}
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push('/profile')} 
+              className="w-full mt-3"
+            >
+              復習を開始する
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+
 
       {/* 今週の目標と学習ストリーク */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -309,42 +429,83 @@ export default function ReportPage() {
         </Card>
       </div>
 
-      {/* 復習アラート */}
-      {todayTasks.length > 0 && (
-        <Card className={urgentTasks.length > 0 ? "border-red-200 bg-red-50" : "border-orange-200 bg-orange-50"}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <AlertTriangle className={`w-5 h-5 ${urgentTasks.length > 0 ? 'text-red-600' : 'text-orange-600'}`} />
-              復習アラート
-              <Badge variant="destructive" className="ml-auto">
-                {todayTasks.length}件
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {urgentTasks.length > 0 && (
-                <div className="text-sm text-red-700">
-                  🔥 期限切れ {urgentTasks.length}件 - 優先的に復習しましょう
-                </div>
-              )}
-              {todayDueTasks.length > 0 && (
-                <div className="text-sm text-orange-700">
-                  ⚠️ 今日期限 {todayDueTasks.length}件
-                </div>
-              )}
+      {/* 学習チャート（コンパクト） */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <BarChart3 className="w-5 h-5" />
+            直近10日間の学習時間
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                margin={{
+                  top: 5,
+                  right: 30,
+                  left: 20,
+                  bottom: 5,
+                }}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12 }}
+                  label={{ value: '分', angle: -90, position: 'insideLeft' }}
+                  domain={[0, 'dataMax']}
+                  ticks={yAxisTicks}
+                  interval={0}
+                />
+                <Tooltip 
+                  formatter={formatTooltip}
+                  labelFormatter={(label) => {
+                    const data = chartData.find(d => d.date === label);
+                    return data ? data.dateLabel : label;
+                  }}
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #ccc',
+                    borderRadius: '6px'
+                  }}
+                />
+                <Bar 
+                  dataKey="minutes" 
+                  fill="#3b82f6"
+                  radius={[2, 2, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          
+          {/* 簡易統計 */}
+          <div className="mt-3 grid grid-cols-3 gap-3 pt-3 border-t">
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {Math.round(chartData.reduce((sum, day) => sum + day.minutes, 0) / 60)}h
+              </div>
+              <div className="text-xs text-muted-foreground">10日合計</div>
             </div>
-            <Button 
-              variant="outline" 
-              onClick={() => router.push('/profile')} 
-              className="w-full mt-3"
-            >
-              復習を開始する
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
+            <div className="text-center">
+              <div className="text-lg font-bold text-green-600">
+                {chartData.length > 0 ? Math.round(chartData.reduce((sum, day) => sum + day.minutes, 0) / chartData.length) : 0}分
+              </div>
+              <div className="text-xs text-muted-foreground">日平均</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-orange-600">
+                {chartData.length > 0 ? Math.max(...chartData.map(d => d.minutes)) : 0}分
+              </div>
+              <div className="text-xs text-muted-foreground">最高記録</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+     
       {/* 最近の学習履歴 */}
       <Card>
         <CardHeader className="pb-3">
@@ -355,22 +516,23 @@ export default function ReportPage() {
         </CardHeader>
         <CardContent>
           {recentRecords.length > 0 ? (
-            <div className="space-y-2">
-              {recentRecords.slice(0, 5).map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">{record.subject}</Badge>
-                    <span className="truncate">{record.content}</span>
+            <div className="space-y-3">
+              {recentRecords.slice(0, 3).map((record) => (
+                <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline">{record.subject}</Badge>
+                    <span className="text-sm">{record.content}</span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {Math.round((record.studyMinutes || 0))}分・{record.studyDate}
+                  <div className="text-right text-sm text-muted-foreground">
+                    <div>{record.studyMinutes}分</div>
+                    <div>{record.studyDate}</div>
                   </div>
                 </div>
               ))}
               <Button 
                 variant="ghost" 
                 onClick={() => router.push('/profile?tab=timeline')} 
-                className="w-full text-sm mt-2"
+                className="w-full text-sm"
               >
                 すべての履歴を見る
               </Button>
