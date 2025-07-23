@@ -64,23 +64,29 @@ export class RealtimeService {
     });
   }
 
-  // 学習宣言投稿
+  // 学習宣言投稿（簡素化 + TTL設定）
   static async postDeclaration(declaration: Omit<StudyDeclaration, 'id' | 'createdAt'>): Promise<string> {
+    const now = Timestamp.now();
+    // 1か月後の日時を計算（TTL用）
+    const oneMonthLater = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    
     const docRef = await addDoc(collection(db, collections.declarations), {
       ...declaration,
-      createdAt: Timestamp.now()
+      createdAt: now,
+      // TTL: 1か月後に自動削除（Firestoreの機能を利用）
+      ttl: Timestamp.fromDate(oneMonthLater)
     });
     return docRef.id;
   }
 
-  // 今日の宣言取得
+  // 今日の宣言取得（1か月以内のもののみ）
   static async getTodayDeclarations(): Promise<StudyDeclaration[]> {
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    // 1か月前の日時を計算
+    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     
     const q = query(
       collection(db, collections.declarations),
-      where('createdAt', '>=', Timestamp.fromDate(todayStart)),
+      where('createdAt', '>=', Timestamp.fromDate(oneMonthAgo)),
       orderBy('createdAt', 'desc')
     );
     
@@ -92,30 +98,20 @@ export class RealtimeService {
     })) as StudyDeclaration[];
   }
 
-  // 宣言にリアクション追加
-  static async addReactionToDeclaration(
-    declarationId: string, 
-    userId: string, 
-    emoji: string
-  ): Promise<void> {
-    const docRef = doc(db, collections.declarations, declarationId);
-    await updateDoc(docRef, {
-      [`reactions.${userId}`]: emoji,
-      updatedAt: Timestamp.now()
-    });
-  }
-
-  // 宣言完了更新
-  static async completeDeclaration(
-    declarationId: string, 
-    actualHours: number
-  ): Promise<void> {
-    const docRef = doc(db, collections.declarations, declarationId);
-    await updateDoc(docRef, {
-      completed: true,
-      actualHours,
-      updatedAt: Timestamp.now()
-    });
+  // 期限切れ宣言の手動削除（バックアップ機能）
+  static async cleanupExpiredDeclarations(): Promise<void> {
+    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    const q = query(
+      collection(db, collections.declarations),
+      where('createdAt', '<', Timestamp.fromDate(oneMonthAgo))
+    );
+    
+    const snapshot = await getDocs(q);
+    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+    
+    await Promise.all(deletePromises);
+    console.log(`Deleted ${snapshot.docs.length} expired declarations`);
   }
 
   // アクティブなタイマー保存

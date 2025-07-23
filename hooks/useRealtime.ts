@@ -46,12 +46,7 @@ export const useDeclarations = () => {
     return () => clearInterval(interval);
   }, []);
   
-  const postDeclaration = async (
-    declaration: string, 
-    subject: Subject, 
-    hours: number, 
-    startTime: string
-  ) => {
+  const postDeclaration = async (declaration: string) => {
     try {
       if (!user) throw new Error('User not authenticated');
       
@@ -59,12 +54,12 @@ export const useDeclarations = () => {
         userId: user.uid,
         userName: user.displayName,
         declaration,
-        plannedSubject: subject,
-        plannedHours: hours,
-        plannedStartTime: startTime,
-        completed: false,
-        actualHours: 0,
-        reactions: {}
+        plannedSubject: '数学', // ダミー値（使用されない）
+        plannedHours: 0, // ダミー値（使用されない）
+        plannedStartTime: '', // ダミー値（使用されない）
+        completed: false, // ダミー値（使用されない）
+        actualHours: 0, // ダミー値（使用されない）
+        reactions: {} // ダミー値（使用されない）
       });
       
       // 即座に更新
@@ -73,12 +68,12 @@ export const useDeclarations = () => {
         userId: user.uid,
         userName: user.displayName,
         declaration,
-        plannedSubject: subject,
-        plannedHours: hours,
-        plannedStartTime: startTime,
-        completed: false,
-        actualHours: 0,
-        reactions: {},
+        plannedSubject: '数学', // ダミー値
+        plannedHours: 0, // ダミー値
+        plannedStartTime: '', // ダミー値
+        completed: false, // ダミー値
+        actualHours: 0, // ダミー値
+        reactions: {}, // ダミー値
         createdAt: new Date()
       };
       
@@ -89,60 +84,10 @@ export const useDeclarations = () => {
       throw error;
     }
   };
-
-  const addReaction = async (declarationId: string, emoji: string) => {
-    try {
-      if (!user) throw new Error('User not authenticated');
-      
-      await RealtimeService.addReactionToDeclaration(declarationId, user.uid, emoji);
-      
-      // ローカル状態を更新
-      setDeclarations(prev => 
-        prev.map(declaration =>
-          declaration.id === declarationId
-            ? {
-                ...declaration,
-                reactions: {
-                  ...declaration.reactions,
-                  [user.uid]: emoji
-                }
-              }
-            : declaration
-        )
-      );
-    } catch (error) {
-      console.error('Failed to add reaction:', error);
-      throw error;
-    }
-  };
-
-  const completeDeclaration = async (declarationId: string, actualHours: number) => {
-    try {
-      await RealtimeService.completeDeclaration(declarationId, actualHours);
-      
-      // ローカル状態を更新
-      setDeclarations(prev =>
-        prev.map(declaration =>
-          declaration.id === declarationId
-            ? {
-                ...declaration,
-                completed: true,
-                actualHours
-              }
-            : declaration
-        )
-      );
-    } catch (error) {
-      console.error('Failed to complete declaration:', error);
-      throw error;
-    }
-  };
   
   return { 
     declarations, 
     isLoading, 
-    postDeclaration, 
-    addReaction,
-    completeDeclaration 
+    postDeclaration
   };
 };

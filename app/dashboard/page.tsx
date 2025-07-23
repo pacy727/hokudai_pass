@@ -12,9 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Users, MessageSquare, TrendingUp, Heart, Trophy, Medal, Award, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, MessageSquare, TrendingUp, Trophy, Medal, Award, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Subject } from '@/types/study';
+import { StudyDeclaration } from '@/types/realtime';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ダミーデータ（実際の実装では StudyRecordService から取得）
@@ -83,25 +84,30 @@ const mockChartData = [
   { date: '7/23', minutes: 390, dateLabel: '7/23(水)' }
 ];
 
-// 拡張された学習宣言ダミーデータ
-const mockExtendedDeclarations = [
-  { id: '1', userName: '佐藤花子', declaration: '19:00から数学3時間頑張る！', plannedSubject: '数学', plannedHours: 3, completed: true, actualHours: 3, reactions: { 'user1': '👍', 'user2': '🔥' }, createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-  { id: '2', userName: '田中太郎', declaration: '今日は英語の長文読解を2時間集中してやります', plannedSubject: '英語', plannedHours: 2, completed: false, actualHours: 0, reactions: { 'user3': '💪' }, createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000) },
-  { id: '3', userName: '鈴木美咲', declaration: '国語の古文単語暗記がんばる〜', plannedSubject: '国語', plannedHours: 1, completed: true, actualHours: 1.5, reactions: {}, createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000) },
-  { id: '4', userName: '高橋理恵', declaration: '物理の力学問題を徹底的に解く！', plannedSubject: '理科', plannedHours: 2, completed: false, actualHours: 0, reactions: { 'user1': '👍' }, createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000) },
-  { id: '5', userName: '山田次郎', declaration: '世界史の近現代史まとめ作業', plannedSubject: '社会', plannedHours: 2, completed: true, actualHours: 2, reactions: { 'user2': '📚', 'user4': '👍' }, createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000) },
-  { id: '6', userName: '佐藤花子', declaration: '英語のリスニング練習1時間', plannedSubject: '英語', plannedHours: 1, completed: true, actualHours: 1, reactions: {}, createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  { id: '7', userName: '田中太郎', declaration: '数学の微積分基礎固め', plannedSubject: '数学', plannedHours: 3, completed: true, actualHours: 2.5, reactions: { 'user1': '🔥' }, createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000) },
-  { id: '8', userName: '鈴木美咲', declaration: '化学の有機化学復習', plannedSubject: '理科', plannedHours: 2, completed: false, actualHours: 0, reactions: {}, createdAt: new Date(Date.now() - 30 * 60 * 60 * 1000) },
-  { id: '9', userName: '高橋理恵', declaration: '現代文の読解演習', plannedSubject: '国語', plannedHours: 1, completed: true, actualHours: 1, reactions: { 'user3': '💪' }, createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000) },
-  { id: '10', userName: '山田次郎', declaration: '情報のプログラミング基礎', plannedSubject: '情報', plannedHours: 2, completed: true, actualHours: 2, reactions: { 'user1': '👍', 'user2': '🔥' }, createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) }
+// 簡素化された学習宣言ダミーデータ
+const mockSimpleDeclarations = [
+  { id: '1', userName: '佐藤花子', declaration: '19:00から数学3時間頑張る！', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+  { id: '2', userName: '田中太郎', declaration: '今日は英語の長文読解を2時間集中してやります', createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000) },
+  { id: '3', userName: '鈴木美咲', declaration: '国語の古文単語暗記がんばる〜', createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000) },
+  { id: '4', userName: '高橋理恵', declaration: '物理の力学問題を徹底的に解く！', createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000) },
+  { id: '5', userName: '山田次郎', declaration: '世界史の近現代史まとめ作業', createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+  { id: '6', userName: '佐藤花子', declaration: '英語のリスニング練習1時間', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+  { id: '7', userName: '田中太郎', declaration: '数学の微積分基礎固め', createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000) },
+  { id: '8', userName: '鈴木美咲', declaration: '化学の有機化学復習', createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
+  { id: '9', userName: '高橋理恵', declaration: '現代文の読解演習', createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
+  { id: '10', userName: '山田次郎', declaration: '情報のプログラミング基礎', createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
+  { id: '11', userName: '佐藤花子', declaration: '今日は早起きして勉強するぞ！', createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+  { id: '12', userName: '田中太郎', declaration: '模試の復習をしっかりやります', createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) },
+  { id: '13', userName: '鈴木美咲', declaration: '明日のテスト対策頑張る', createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) },
+  { id: '14', userName: '高橋理恵', declaration: '図書館で集中して勉強してきます', createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000) },
+  { id: '15', userName: '山田次郎', declaration: '夏休みの勉強計画を立てました', createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000) }
 ];
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const { statuses, isLoading: statusLoading } = useRealtimeStudyStatus();
-  const { declarations, isLoading: declarationLoading, postDeclaration, addReaction } = useDeclarations();
+  const { declarations, isLoading: declarationLoading, postDeclaration } = useDeclarations();
   const { toast } = useToast();
   
   const [newDeclaration, setNewDeclaration] = useState('');
@@ -123,12 +129,8 @@ export default function DashboardPage() {
 
     setIsPosting(true);
     try {
-      await postDeclaration(
-        newDeclaration.trim(),
-        '数学', // デフォルト科目
-        2, // デフォルト時間
-        '19:00' // デフォルト開始時刻
-      );
+      // 簡素化された宣言投稿（教科・時間情報は不要）
+      await postDeclaration(newDeclaration.trim());
       setNewDeclaration('');
       toast({
         title: "宣言完了！",
@@ -145,20 +147,10 @@ export default function DashboardPage() {
     }
   };
 
-  const handleReaction = async (declarationId: string, emoji: string) => {
-    try {
-      await addReaction(declarationId, emoji);
-      toast({
-        title: "リアクション送信！",
-        description: "応援の気持ちを送りました 👍"
-      });
-    } catch (error) {
-      toast({
-        title: "エラー",
-        description: "リアクションの送信に失敗しました",
-        variant: "destructive"
-      });
-    }
+  // 1か月以内の宣言のみフィルタリング
+  const filterRecentDeclarations = (declarations: any[]) => {
+    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    return declarations.filter(declaration => declaration.createdAt > oneMonthAgo);
   };
 
   // 利用可能科目の取得
@@ -212,10 +204,10 @@ export default function DashboardPage() {
     return (mockRankingData.subjects as Record<string, typeof mockRankingData.subjects['英語']>)[selectedSubject] || mockRankingData.subjects['英語'];
   };
 
-  // 表示する宣言を取得
+  // 表示する宣言を取得（1か月以内 + 表示制限）
   const getDisplayDeclarations = () => {
-    const allDeclarations = mockExtendedDeclarations; // 実際の実装では API から取得
-    return showAllDeclarations ? allDeclarations : allDeclarations.slice(0, 20);
+    const recentDeclarations = filterRecentDeclarations(mockSimpleDeclarations);
+    return showAllDeclarations ? recentDeclarations : recentDeclarations.slice(0, 15);
   };
 
   // ランキング表示コンポーネント
@@ -330,20 +322,12 @@ export default function DashboardPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{status.userName}</span>
-                        <Badge variant="outline">{status.currentSubject}</Badge>
+                        <Badge variant="outline">{getSubjectDisplayName(status.currentSubject)}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {formatDistanceToNow(status.startTime, { locale: ja })}継続中
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleReaction(status.studySessionId, '👍')}
-                    >
-                      <Heart className="w-4 h-4 mr-1" />
-                      応援
-                    </Button>
                   </div>
                 ))
               ) : (
@@ -389,7 +373,7 @@ export default function DashboardPage() {
                 <Input
                   value={newDeclaration}
                   onChange={(e) => setNewDeclaration(e.target.value)}
-                  placeholder="例: 19:00から数学3時間頑張る！"
+                  placeholder="例: 今日は数学を3時間頑張る！"
                   disabled={isPosting}
                   className="text-base"
                 />
@@ -403,56 +387,35 @@ export default function DashboardPage() {
               </form>
 
               {/* 宣言一覧 */}
-              <div className="space-y-2">
-                {getDisplayDeclarations().map((declaration) => (
-                  <div key={declaration.id} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{declaration.userName}</span>
-                        <Badge variant="outline" className="text-xs">{declaration.plannedSubject}</Badge>
-                        <Badge variant="outline" className="text-xs">{declaration.plannedHours}h</Badge>
-                        {declaration.completed && (
-                          <Badge className="bg-green-500 text-xs">完了</Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
-                      </div>
-                    </div>
-                    <p className="text-sm mb-2">{declaration.declaration}</p>
-                    
-                    {/* リアクション */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-1">
-                        {['👍', '🔥', '💪', '📚'].map((emoji) => (
-                          <Button
-                            key={emoji}
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReaction(declaration.id, emoji)}
-                            className="h-6 w-6 p-0 text-xs"
-                          >
-                            {emoji}
-                          </Button>
-                        ))}
-                      </div>
-                      
-                      {/* リアクション表示 */}
-                      {Object.keys(declaration.reactions).length > 0 && (
-                        <div className="flex gap-1">
-                          {Object.entries(declaration.reactions).map(([userId, emoji]) => (
-                            <span key={userId} className="text-xs bg-white px-1 py-0.5 rounded">
-                              {emoji}
+              <div className="space-y-3">
+                {getDisplayDeclarations().length > 0 ? (
+                  getDisplayDeclarations().map((declaration) => (
+                    <div key={declaration.id} className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-medium text-blue-800">{declaration.userName}</span>
+                            <span className="text-xs text-blue-600">
+                              {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
                             </span>
-                          ))}
+                          </div>
+                          <p className="text-gray-800 leading-relaxed">{declaration.declaration}</p>
                         </div>
-                      )}
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500 font-medium mb-2">まだ学習宣言がありません</p>
+                    <p className="text-sm text-gray-400">
+                      最初の学習宣言を投稿してみましょう！
+                    </p>
                   </div>
-                ))}
+                )}
                 
                 {/* もっと見るボタン */}
-                {!showAllDeclarations && mockExtendedDeclarations.length > 20 && (
+                {!showAllDeclarations && filterRecentDeclarations(declarations).length > 15 && (
                   <div className="text-center pt-2">
                     <Button 
                       variant="outline" 
@@ -460,7 +423,7 @@ export default function DashboardPage() {
                       className="flex items-center gap-2"
                     >
                       <ChevronDown className="w-4 h-4" />
-                      もっと見る ({mockExtendedDeclarations.length - 20}件)
+                      もっと見る ({filterRecentDeclarations(declarations).length - 15}件)
                     </Button>
                   </div>
                 )}

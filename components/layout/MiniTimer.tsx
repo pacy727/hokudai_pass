@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useTimer } from '@/hooks/useTimer';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Play, Pause, Square, Maximize2 } from 'lucide-react';
@@ -9,8 +10,16 @@ import { Play, Pause, Square, Maximize2 } from 'lucide-react';
 export function MiniTimer() {
   const router = useRouter();
   const timer = useTimer();
+  const { user } = useAuth();
 
   if (!timer.isRunning && !timer.isPaused) return null;
+
+  // カスタム科目名の取得
+  const getSubjectDisplayName = (subjectKey: string): string => {
+    if (!user?.customSubjects || !subjectKey) return subjectKey;
+    const customName = user.customSubjects[subjectKey as keyof typeof user.customSubjects];
+    return customName || subjectKey;
+  };
 
   const getSubjectColor = (subject: string) => {
     const colors = {
@@ -18,7 +27,12 @@ export function MiniTimer() {
       英語: 'bg-green-500',
       国語: 'bg-red-500',
       理科: 'bg-purple-500',
-      社会: 'bg-orange-500'
+      理科1: 'bg-purple-500',
+      理科2: 'bg-purple-500',
+      社会: 'bg-orange-500',
+      社会1: 'bg-orange-500',
+      社会2: 'bg-orange-500',
+      情報: 'bg-gray-500'
     };
     return colors[subject as keyof typeof colors] || 'bg-gray-500';
   };
@@ -48,6 +62,8 @@ export function MiniTimer() {
     router.push(`/timer?subject=${timer.subject}`);
   };
 
+  const displaySubjectName = timer.subject ? getSubjectDisplayName(timer.subject) : '';
+
   return (
     <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm border rounded-lg px-3 py-2 shadow-sm">
       {/* 状態アイコン */}
@@ -57,7 +73,7 @@ export function MiniTimer() {
           variant="outline" 
           className={`text-white text-xs px-2 py-0 ${getSubjectColor(timer.subject || '')}`}
         >
-          {timer.subject}
+          {displaySubjectName}
         </Badge>
       </div>
 

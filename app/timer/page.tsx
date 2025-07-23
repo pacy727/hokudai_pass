@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Subject } from '@/types/study';
-import { Play, Pause, Square, Home, RotateCcw } from 'lucide-react';
+import { Play, Pause, Square, Home, RotateCcw, Eye, EyeOff } from 'lucide-react';
 
 export default function TimerPage() {
   const router = useRouter();
@@ -16,6 +16,7 @@ export default function TimerPage() {
   const { user } = useAuth();
   const timer = useTimer();
   const [subject] = useState<Subject | null>(searchParams.get('subject') as Subject);
+  const [isTimeVisible, setIsTimeVisible] = useState(true);
 
   useEffect(() => {
     // URL から subject が取得できない場合はホームに戻る
@@ -58,11 +59,20 @@ export default function TimerPage() {
     router.push('/');
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (confirm('タイマーをリセットしてもよろしいですか？')) {
+      // タイマーを完全に停止・リセット
+      await timer.stopTimer();
       timer.resetTimer();
       router.push('/');
     }
+  };
+
+  // カスタム科目名の取得
+  const getSubjectDisplayName = (subjectKey: Subject): string => {
+    if (!user?.customSubjects) return subjectKey;
+    const customName = user.customSubjects[subjectKey as keyof typeof user.customSubjects];
+    return customName || subjectKey;
   };
 
   const getSubjectColor = (subject: Subject) => {
@@ -102,7 +112,7 @@ export default function TimerPage() {
       <Card className={`${getSubjectColor(subject)}`}>
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">
-            ⏱️ {subject} 学習タイマー
+            ⏱️ {getSubjectDisplayName(subject)} 学習タイマー
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             集中して頑張りましょう！
@@ -112,7 +122,7 @@ export default function TimerPage() {
           {/* タイマー表示 */}
           <div className="text-center">
             <div className="text-6xl font-mono font-bold mb-4 text-gray-800">
-              {timer.formatTime(timer.elapsedTime)}
+              {isTimeVisible ? timer.formatTime(timer.elapsedTime) : '••:••:••'}
             </div>
             <Badge 
               variant={status.color as any}
@@ -122,16 +132,26 @@ export default function TimerPage() {
             </Badge>
           </div>
 
-
-
-          {/* リアルタイム表示通知 */}
-          <div className="bg-green-50 p-3 rounded-lg text-center border border-green-200">
-            <p className="text-sm text-green-700 font-medium">
-              📍 現在学習中として表示されています
-            </p>
-            <p className="text-xs text-green-600 mt-1">
-              {status.icon} {user?.displayName} ({subject} - {timer.formatTime(timer.elapsedTime)})
-            </p>
+          {/* 時間表示切り替えボタン */}
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsTimeVisible(!isTimeVisible)}
+              className="text-xs"
+            >
+              {isTimeVisible ? (
+                <>
+                  <EyeOff className="w-4 h-4 mr-1" />
+                  時刻非表示
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-1" />
+                  時刻表示
+                </>
+              )}
+            </Button>
           </div>
 
           {/* メインコントロールボタン */}
@@ -198,26 +218,6 @@ export default function TimerPage() {
               <RotateCcw className="w-4 h-4 mr-1" />
               リセット
             </Button>
-          </div>
-
-          {/* 今日の目標 */}
-          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-700 text-center">
-              📝 今日の目標: 8時間勉強
-            </p>
-            <p className="text-xs text-blue-600 text-center mt-1">
-              現在の進捗: {timer.formatTime(timer.elapsedTime)} / 8:00:00
-            </p>
-          </div>
-
-          {/* 操作ヒント */}
-          <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-            <h4 className="text-sm font-semibold text-yellow-800 mb-1">💡 操作ヒント</h4>
-            <ul className="text-xs text-yellow-700 space-y-1">
-              <li>• 一時停止中も学習時間は正確に記録されます</li>
-              <li>• ホームボタンでバックグラウンド継続可能</li>
-              <li>• 勉強終了で自動的に記録ページに移動</li>
-            </ul>
           </div>
         </CardContent>
       </Card>

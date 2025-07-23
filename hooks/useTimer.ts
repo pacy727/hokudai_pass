@@ -98,6 +98,31 @@ export const useTimer = () => {
     };
   };
 
+  // タイマーリセット（完全クリア）
+  const resetTimer = async () => {
+    if (!user) return;
+    
+    // リアルタイム状況とアクティブタイマーをクリア
+    try {
+      await RealtimeService.clearStudyStatus(user.uid);
+      await RealtimeService.clearActiveTimer(user.uid);
+    } catch (error) {
+      console.error('Failed to clear realtime status:', error);
+    }
+    
+    // インターバルをクリア
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    // pauseStartTimeもクリア
+    pauseStartTimeRef.current = null;
+    
+    // ストアをリセット
+    timerStore.resetTimer();
+  };
+
   // タイマー復元
   const restoreTimer = async () => {
     if (!user) return;
@@ -165,6 +190,7 @@ export const useTimer = () => {
     stopTimer,
     pauseTimer,
     resumeTimer,
+    resetTimer,
     restoreTimer,
     formatTime: (seconds: number) => {
       const hours = Math.floor(seconds / 3600);
