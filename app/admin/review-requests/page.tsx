@@ -141,6 +141,28 @@ export default function AdminReviewRequestsPage() {
     };
   };
 
+  // 日付フォーマット関数（安全な変換）
+  const formatDate = (date: any): string => {
+    if (!date) return '不明';
+    
+    // すでにDateオブジェクトの場合
+    if (date instanceof Date) {
+      return date.toLocaleDateString('ja-JP');
+    }
+    
+    // Firestore Timestampの場合
+    if (date && typeof date.toDate === 'function') {
+      return date.toDate().toLocaleDateString('ja-JP');
+    }
+    
+    // 文字列の場合
+    if (typeof date === 'string') {
+      return new Date(date).toLocaleDateString('ja-JP');
+    }
+    
+    return '不明';
+  };
+
   if (isLoading || isDataLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -242,163 +264,126 @@ export default function AdminReviewRequestsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                getFilteredRequests(tabValue).map((request) => {
-                  const stageName = getStageName(request.stage);
-                  
-                  return (
-                    <Card key={request.id} className="hover:shadow-md transition-shadow">
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <Badge variant="outline">
-                              {request.subject}
-                            </Badge>
-                            <Badge className={getStatusColor(request.status)}>
-                              {getStatusLabel(request.status)}
-                            </Badge>
-                            <div className="flex items-center space-x-1 text-sm text-gray-500">
-                              <User className="h-3 w-3" />
-                              <span>{request.userName}</span>
-                            </div>
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {request.createdAt.toLocaleDateString('ja-JP')}
-                          </div>
+                getFilteredRequests(tabValue).map((request) => (
+                  <Card key={request.id} className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
+                    {/* 1行目：基本情報と割り当て状況 */}
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        {/* 左側：基本情報 */}
+                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            {request.subject}
+                          </Badge>
+                          <Badge className={`${getStatusColor(request.status)} text-xs px-1 py-0`}>
+                            {getStatusLabel(request.status)}
+                          </Badge>
+                          <span className="text-xs text-gray-500 truncate">
+                            {request.userName} | {formatDate(request.createdAt)}
+                          </span>
                         </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          {/* 学習内容 */}
-                          <div>
-                            <h4 className="font-semibold text-lg mb-1">{request.unit}</h4>
-                            <p className="text-gray-700 leading-relaxed">{request.content}</p>
-                            {request.details && (
-                              <p className="text-sm text-gray-600 mt-2 bg-gray-50 p-2 rounded">
-                                <strong>詳細:</strong> {request.details}
-                              </p>
-                            )}
-                            {request.memo && (
-                              <p className="text-sm text-gray-600 mt-2 bg-blue-50 p-2 rounded">
-                                <strong>メモ:</strong> {request.memo}
-                              </p>
-                            )}
-                          </div>
-
-                          {/* 管理者応答 */}
-                          {request.adminResponse && (
-                            <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                              <div className="flex items-center gap-2 mb-1">
-                                <MessageSquare className="h-4 w-4 text-green-600" />
-                                <span className="text-sm font-medium text-green-800">管理者からの応答</span>
-                              </div>
-                              <p className="text-sm text-green-700">{request.adminResponse}</p>
-                            </div>
-                          )}
-
-                          {/* 割り当て済み問題表示（修正版） */}
-                          {request.assignedQuestions && request.assignedQuestions.length > 0 && (
-                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                              <div className="flex items-center gap-2 mb-2">
-                                <BookOpen className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-800">
-                                  割り当て済み問題 ({request.assignedQuestions.length}/5)
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-5 gap-2">
-                                {[1, 2, 3, 4, 5].map((stage) => {
-                                  const hasQuestion = request.assignedQuestions?.some(q => q.stage === stage);
-                                  const assignedQuestion = request.assignedQuestions?.find(q => q.stage === stage);
-                                  
-                                  return (
-                                    <Button
-                                      key={stage}
-                                      variant={hasQuestion ? "default" : "outline"}
-                                      size="sm"
-                                      className={`text-center py-3 px-2 rounded text-xs transition-all ${
-                                        hasQuestion 
-                                          ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' 
-                                          : 'bg-gray-200 text-gray-600 cursor-not-allowed'
-                                      }`}
-                                      disabled={!hasQuestion}
-                                      onClick={() => {
-                                        if (hasQuestion && assignedQuestion) {
-                                          // 問題確認モーダルを開く
-                                          setSelectedQuestionForView(assignedQuestion.question);
-                                          setIsQuestionViewModalOpen(true);
-                                        }
-                                      }}
-                                    >
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="font-semibold">第{stage}回</span>
-                                        <div className="text-xs opacity-80">
-                                          {stage === 1 && '1日後'}
-                                          {stage === 2 && '3日後'}
-                                          {stage === 3 && '1週間後'}
-                                          {stage === 4 && '2週間後'}
-                                          {stage === 5 && '1か月後'}
-                                        </div>
-                                        {hasQuestion && <CheckCircle className="h-3 w-3" />}
-                                      </div>
-                                    </Button>
-                                  );
-                                })}
-                              </div>
-                              {/* 全て完了している場合の表示 */}
+                        
+                        {/* 右側：割り当て済み問題 */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {request.assignedQuestions && request.assignedQuestions.length > 0 ? (
+                            <>
+                              {[1, 2, 3, 4, 5].map((stage) => {
+                                const hasQuestion = request.assignedQuestions?.some(q => q.stage === stage);
+                                const assignedQuestion = request.assignedQuestions?.find(q => q.stage === stage);
+                                
+                                return (
+                                  <Button
+                                    key={stage}
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`h-6 px-2 text-xs font-medium ${
+                                      hasQuestion 
+                                        ? 'text-green-700 bg-green-50 hover:bg-green-100' 
+                                        : 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                                    }`}
+                                    disabled={!hasQuestion}
+                                    onClick={() => {
+                                      if (hasQuestion && assignedQuestion) {
+                                        setSelectedQuestionForView(assignedQuestion.question);
+                                        setIsQuestionViewModalOpen(true);
+                                      }
+                                    }}
+                                  >
+                                    第{stage}回{hasQuestion ? '✓' : ''}
+                                  </Button>
+                                );
+                              })}
                               {request.assignedQuestions.length >= 5 && (
-                                <div className="mt-2 text-center">
-                                  <Badge variant="default" className="bg-green-600 text-white">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    全段階完了
-                                  </Badge>
-                                </div>
+                                <Badge variant="default" className="bg-green-600 text-white text-xs px-1 py-0 ml-1">
+                                  完了
+                                </Badge>
                               )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">問題未割り当て</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* 2行目：学習内容とアクション */}
+                      <div className="flex items-center justify-between">
+                        {/* 学習内容 */}
+                        <div className="flex-1 min-w-0 mr-3">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium text-sm truncate">{request.unit}</span>
+                            <span className="text-xs text-gray-500 truncate">
+                              {request.content}
+                            </span>
+                          </div>
+                          {(request.details || request.memo) && (
+                            <div className="text-xs text-gray-400 truncate mt-1">
+                              {request.details && `詳細: ${request.details}`}
+                              {request.details && request.memo && ' | '}
+                              {request.memo && `メモ: ${request.memo}`}
                             </div>
                           )}
-
-                          {/* アクションボタン */}
-                          <div className="flex items-center justify-between pt-4 border-t">
-                            <div className="flex items-center space-x-2">
-                              {request.status === 'pending' && (
-                                <>
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => handleStatusUpdate(request.id, 'in_progress', '復習問題の作成を開始します。')}
-                                  >
-                                    <Clock className="h-4 w-4 mr-1" />
-                                    作業開始
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="destructive"
-                                    onClick={() => handleStatusUpdate(request.id, 'rejected', 'リクエストを却下しました。')}
-                                  >
-                                    <XCircle className="h-4 w-4 mr-1" />
-                                    却下
-                                  </Button>
-                                </>
-                              )}
-                              
-                              {(request.status === 'pending' || request.status === 'in_progress') && (
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => handleAssignQuestions(request)}
-                                >
-                                  <Plus className="h-4 w-4 mr-1" />
-                                  問題を割り当て
-                                </Button>
-                              )}
-                            </div>
-
-                            <div className="text-xs text-gray-500">
-                              ID: {request.id.slice(0, 8)}...
-                            </div>
-                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
+                        
+                        {/* アクションボタン */}
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          {request.status === 'pending' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleStatusUpdate(request.id, 'in_progress', '復習問題の作成を開始します。')}
+                                className="h-6 px-2 text-xs"
+                              >
+                                開始
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => handleStatusUpdate(request.id, 'rejected', 'リクエストを却下しました。')}
+                                className="h-6 px-2 text-xs"
+                              >
+                                却下
+                              </Button>
+                            </>
+                          )}
+                          
+                          {(request.status === 'pending' || request.status === 'in_progress') && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleAssignQuestions(request)}
+                              className="h-6 px-2 text-xs"
+                            >
+                              問題作成
+                            </Button>
+                          )}
+                          
+                          <span className="text-xs text-gray-300 ml-2">
+                            {request.id.slice(0, 4)}
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
               )}
             </TabsContent>
           ))}
@@ -422,7 +407,7 @@ export default function AdminReviewRequestsPage() {
         />
       )}
 
-      {/* 問題確認モーダル（改良版） */}
+      {/* 問題確認モーダル（修正版） */}
       {selectedQuestionForView && isQuestionViewModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -460,7 +445,7 @@ export default function AdminReviewRequestsPage() {
                       <strong>作成者:</strong> {selectedQuestionForView.teacherName}
                     </div>
                     <div>
-                      <strong>作成日:</strong> {selectedQuestionForView.createdAt?.toLocaleDateString('ja-JP')}
+                      <strong>作成日:</strong> {formatDate(selectedQuestionForView.createdAt)}
                     </div>
                     <div>
                       <strong>対象段階:</strong> 第{selectedQuestionForView.targetStage}回復習
@@ -514,12 +499,9 @@ export default function AdminReviewRequestsPage() {
               <div className="flex justify-center pt-4 border-t">
                 <Button
                   onClick={() => {
-                    // 編集モーダルを開く処理
-                    // まず現在のモーダルを閉じる
                     setIsQuestionViewModalOpen(false);
                     setSelectedQuestionForView(null);
                     
-                    // 該当するリクエストを見つけて編集モーダルを開く
                     const parentRequest = requests.find(req => 
                       req.assignedQuestions?.some(aq => aq.question.id === selectedQuestionForView.id)
                     );
@@ -541,9 +523,4 @@ export default function AdminReviewRequestsPage() {
       )}
     </div>
   );
-
-  // Helper function (この関数が存在しない場合は追加)
-  function getStageName(stage: any) {
-    return `第${stage}回`;
-  }
 }

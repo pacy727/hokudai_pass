@@ -49,8 +49,6 @@ export function QuestionAssignmentModal({
   const loadAssignedQuestions = async () => {
     setIsLoadingQuestions(true);
     try {
-      // Firestoreインデックスエラーを回避するため、シンプルクエリに変更
-      // 全ての復習問題を取得してクライアントサイドでフィルタリング
       const questions = await ReviewQuestionRequestService.getAssignedQuestions(request.id);
       setAssignedQuestions(questions);
       
@@ -62,7 +60,6 @@ export function QuestionAssignmentModal({
       }
     } catch (error) {
       console.error('Error loading assigned questions:', error);
-      // エラー時でも空配列で継続
       setAssignedQuestions([]);
     } finally {
       setIsLoadingQuestions(false);
@@ -86,7 +83,6 @@ export function QuestionAssignmentModal({
     setIsSubmitting(true);
     
     try {
-      // シンプルな問題データ構造
       const cleanQuestionData: any = {
         reviewQuestionRequestId: request.id,
         teacherId: user.uid,
@@ -153,7 +149,6 @@ export function QuestionAssignmentModal({
     setIsUpdating(true);
     
     try {
-      // 問題の更新処理（実際のサービスメソッドは実装が必要）
       await ReviewQuestionRequestService.updateQuestion(editingQuestion.id, {
         content: questionData.question.trim(),
         answer: questionData.answer.trim(),
@@ -202,7 +197,7 @@ export function QuestionAssignmentModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <h2 className="text-xl font-bold">復習問題の割り当て</h2>
@@ -216,48 +211,61 @@ export function QuestionAssignmentModal({
         </div>
 
         <div className="p-6">
-          {/* リクエスト情報 */}
+          {/* リクエスト情報（コンパクト） */}
           <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <BookOpen className="h-5 w-5" />
-                <span>リクエスト内容</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-2">
-                    <User className="h-4 w-4 text-gray-500" />
-                    <strong>学習者:</strong>
-                    <span>{request.userName}</span>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-6">
+                {/* 左側：基本情報 */}
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center space-x-4 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <User className="h-4 w-4 text-gray-500" />
+                      <span><strong>学習者:</strong> {request.userName}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Clock className="h-4 w-4 text-gray-500" />
+                      <span><strong>リクエスト日:</strong> {request.createdAt.toLocaleDateString('ja-JP')}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Clock className="h-4 w-4 text-gray-500" />
-                    <strong>リクエスト日:</strong>
-                    <span>{request.createdAt.toLocaleDateString('ja-JP')}</span>
+                  <div className="space-y-1">
+                    <div><strong>単元:</strong> {request.unit}</div>
+                    <div className="text-sm text-gray-700">{request.content}</div>
+                    {request.details && (
+                      <div className="text-sm bg-gray-50 p-2 rounded">
+                        <strong>詳細:</strong> {request.details}
+                      </div>
+                    )}
+                    {request.memo && (
+                      <div className="text-sm bg-blue-50 p-2 rounded">
+                        <strong>メモ:</strong> {request.memo}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div><strong>単元:</strong> {request.unit}</div>
-                <div><strong>学習内容:</strong> {request.content}</div>
-                {request.details && (
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <strong>詳細:</strong> {request.details}
+                
+                {/* 右側：進捗状況 */}
+                <div className="flex-shrink-0">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600 mb-1">
+                      {assignedQuestions.length}/5
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">問題完了</div>
+                    <div className="w-24 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${(assignedQuestions.length / 5) * 100}%` }}
+                      ></div>
+                    </div>
                   </div>
-                )}
-                {request.memo && (
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <strong>学習者のメモ:</strong> {request.memo}
-                  </div>
-                )}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* 割り当て状況 */}
+          {/* 割り当て状況（コンパクト） */}
           <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>復習問題割り当て状況 ({assignedQuestions.length}/5)</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">復習問題割り当て状況</CardTitle>
               <p className="text-sm text-gray-600">
                 エビングハウスの忘却曲線に基づく5段階復習システム
               </p>
@@ -269,7 +277,7 @@ export function QuestionAssignmentModal({
                   <span>読み込み中...</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
                   {[1, 2, 3, 4, 5].map((stage) => {
                     const assigned = isStageAssigned(stage as ReviewStage);
                     const assignedQuestion = assignedQuestions.find(q => q.targetStage === stage);
@@ -277,10 +285,10 @@ export function QuestionAssignmentModal({
                     
                     return (
                       <div key={stage} className="space-y-2">
-                        {/* 段階ボタン（問題確認用） */}
+                        {/* 段階ボタン */}
                         <Button
                           variant={assigned ? "default" : isSelected ? "secondary" : "outline"}
-                          className={`w-full h-20 flex flex-col items-center justify-center text-center transition-all ${
+                          className={`w-full h-16 flex flex-col items-center justify-center text-center transition-all ${
                             assigned 
                               ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' 
                               : isSelected
@@ -290,14 +298,12 @@ export function QuestionAssignmentModal({
                           onClick={() => {
                             setSelectedStage(stage as ReviewStage);
                             if (assigned && assignedQuestion) {
-                              // 割り当て済みの場合は内容を表示
                               setEditingQuestion(null);
                               setQuestionData({
                                 question: assignedQuestion.content || '',
                                 answer: assignedQuestion.answer || ''
                               });
                             } else {
-                              // 未割り当ての場合は新規作成フォーム
                               setEditingQuestion(null);
                               setQuestionData({ question: '', answer: '' });
                             }
@@ -328,7 +334,6 @@ export function QuestionAssignmentModal({
                           size="sm"
                           onClick={() => {
                             if (assigned && assignedQuestion) {
-                              // 編集モードで開く
                               setEditingQuestion(assignedQuestion);
                               setQuestionData({
                                 question: assignedQuestion.content || '',
@@ -336,13 +341,12 @@ export function QuestionAssignmentModal({
                               });
                               setSelectedStage(stage as ReviewStage);
                             } else {
-                              // 新規作成
                               setEditingQuestion(null);
                               setQuestionData({ question: '', answer: '' });
                               setSelectedStage(stage as ReviewStage);
                             }
                           }}
-                          className="w-full text-xs"
+                          className="w-full text-xs h-8"
                         >
                           {assigned ? '編集' : '作成'}
                         </Button>
@@ -351,20 +355,6 @@ export function QuestionAssignmentModal({
                   })}
                 </div>
               )}
-              
-              {/* 進捗バー */}
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">進捗</span>
-                  <span className="text-sm text-gray-600">{assignedQuestions.length}/5 完了</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-                    style={{ width: `${(assignedQuestions.length / 5) * 100}%` }}
-                  ></div>
-                </div>
-              </div>
             </CardContent>
           </Card>
 
