@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { StudyRecordService } from '@/lib/db/studyRecords';
+import { ReviewQuestionRequestService } from '@/lib/db/reviewQuestionRequestService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,6 +34,7 @@ export default function RecordPage() {
   const [details, setDetails] = useState('');
   const [memo, setMemo] = useState('');
   const [shouldReview, setShouldReview] = useState(false);
+  const [requestReviewQuestions, setRequestReviewQuestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -111,6 +113,17 @@ export default function RecordPage() {
   // 開始時間・勉強分数変更時の終了時間自動計算
   const endTime = calculateEndTime(startTime, studyMinutes);
 
+  // 成功メッセージの取得
+  const getSuccessMessage = () => {
+    if (shouldReview && requestReviewQuestions) {
+      return "勉強記録を保存し、復習リストに追加、復習問題をリクエストしました！";
+    } else if (shouldReview) {
+      return "勉強記録を保存し、復習リストに追加しました！";
+    } else {
+      return "勉強記録を保存しました。お疲れ様でした！";
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -154,7 +167,8 @@ export default function RecordPage() {
         startTime: startTime,
         endTime: endTime,
         content: content.trim(),
-        shouldReview: shouldReview
+        shouldReview: shouldReview,
+        requestReviewQuestions: requestReviewQuestions
       };
 
       // 空でない場合のみ追加
@@ -166,15 +180,38 @@ export default function RecordPage() {
         recordData.memo = memo.trim();
       }
 
+      if (timerData?.sessionId) {
+        recordData.sessionId = timerData.sessionId;
+      }
+
       console.log('Saving record data:', recordData);
 
-      await StudyRecordService.createRecord(recordData);
+      const recordId = await StudyRecordService.createRecord(recordData);
+      
+      // 復習問題リクエストの作成
+      if (shouldReview && requestReviewQuestions) {
+        try {
+          console.log('Creating review question request...');
+          await ReviewQuestionRequestService.createRequest({
+            userId: user.uid,
+            userName: user.displayName,
+            studyRecordId: recordId,
+            subject: subject,
+            unit: content.trim(),
+            content: details.trim() || content.trim(),
+            details: details.trim(),
+            memo: memo.trim()
+          });
+          console.log('Review question request created successfully');
+        } catch (error) {
+          console.error('Error creating review question request:', error);
+          // リクエスト作成に失敗しても、学習記録の保存は成功とする
+        }
+      }
       
       toast({
         title: "記録完了！",
-        description: shouldReview 
-          ? "勉強記録を保存し、復習リストに追加しました！" 
-          : "勉強記録を保存しました。お疲れ様でした！",
+        description: getSuccessMessage(),
       });
 
       router.push('/');
@@ -381,7 +418,12 @@ export default function RecordPage() {
                   type="checkbox"
                   id="shouldReview"
                   checked={shouldReview}
-                  onChange={(e) => setShouldReview(e.target.checked)}
+                  onChange={(e) => {
+                    setShouldReview(e.target.checked);
+                    if (!e.target.checked) {
+                      setRequestReviewQuestions(false); // 復習リストのチェックを外したら復習問題リクエストも外す
+                    }
+                  }}
                   className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                 />
                 <Label htmlFor="shouldReview" className="text-base flex items-center gap-2 cursor-pointer">
@@ -392,6 +434,28 @@ export default function RecordPage() {
               <p className="text-sm text-muted-foreground ml-8">
                 チェックすると、この学習内容が復習リストに追加され、後日復習の通知を受け取れます
               </p>
+
+              {/* 復習問題リクエストチェックボックス（条件付き表示） */}
+              {shouldReview && (
+                <div className="ml-8 mt-3">
+                  <div className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                    <input
+                      type="checkbox"
+                      id="requestReviewQuestions"
+                      checked={requestReviewQuestions}
+                      onChange={(e) => setRequestReviewQuestions(e.target.checked)}
+                      className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                    />
+                    <Label htmlFor="requestReviewQuestions" className="text-sm flex items-center gap-2 cursor-pointer">
+                      <MessageCircle className="w-4 h-4 text-green-600" />
+                      復習問題をリクエストする
+                    </Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 ml-6">
+                    チェックすると、管理者に復習問題の作成をリクエストします
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* 送信ボタン */}
@@ -410,7 +474,8 @@ export default function RecordPage() {
                 ) : (
                   <>
                     💾 記録完了してホームに戻る
-                    {shouldReview && <span className="ml-2">（復習リスト登録済み）</span>}
+                    {shouldReview && requestReviewQuestions && <span className="ml-2">（復習リスト登録・問題リクエスト済み）</span>}
+                    {shouldReview && !requestReviewQuestions && <span className="ml-2">（復習リスト登録済み）</span>}
                   </>
                 )}
               </Button>
@@ -446,6 +511,7 @@ export default function RecordPage() {
               <li>• 詳細には解いた問題数や理解度を記録</li>
               <li>• 感想には次回への改善点も書いてみよう</li>
               <li>• 復習したい内容は「復習リスト登録」をチェック</li>
+              <li>• 復習問題が欲しい場合は「復習問題をリクエスト」もチェック</li>
               {!isFromTimer && (
                 <>
                   <li>• 開始時間・勉強時間を入力すると終了時間が自動表示されます</li>

@@ -38,5 +38,10 @@ export const collections = {
   realtimeStatus: 'realtime_study_status',
   declarations: 'study_declarations',
   alerts: 'group_alerts',
-  activeTimers: 'active_timers'
+  activeTimers: 'active_timers',
+  // 復習問題リクエスト関連（新規追加）
+  reviewQuestionRequests: 'review_question_requests',
+  reviewQuestions: 'review_questions',
+  reviewItems: 'review_items',
+  reviewResults: 'review_results',
 } as const;
