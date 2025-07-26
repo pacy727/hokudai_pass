@@ -59,7 +59,7 @@ export function QuestionAssignmentModal({
       setAssignedQuestions(questions);
       
       // まだ割り当てられていない最初の段階を選択
-      const assignedStages = questions.map((q: ReviewQuestion) => q.targetStage);
+      const assignedStages = questions.map(q => q.targetStage);
       const nextStage = [1, 2, 3, 4, 5].find(stage => !assignedStages.includes(stage as ReviewStage)) as ReviewStage || 1;
       setSelectedStage(nextStage);
     } catch (error) {
@@ -100,7 +100,8 @@ export function QuestionAssignmentModal({
     setIsSubmitting(true);
     
     try {
-      const question: Omit<ReviewQuestion, 'id' | 'createdAt' | 'updatedAt'> = {
+      // undefinedフィールドを除去してクリーンなデータを作成
+      const cleanQuestionData: any = {
         reviewQuestionRequestId: request.id,
         teacherId: user.uid,
         teacherName: user.displayName,
@@ -109,15 +110,32 @@ export function QuestionAssignmentModal({
         title: questionData.title.trim(),
         content: questionData.content.trim(),
         type: questionData.type,
-        options: questionData.type === 'multiple_choice' ? questionData.options.filter(opt => opt.trim()) : undefined,
-        answer: questionData.answer.trim() || undefined,
-        explanation: questionData.explanation.trim() || undefined,
         difficulty: questionData.difficulty,
         estimatedTime: questionData.estimatedTime,
         targetStage: selectedStage
       };
 
-      await ReviewQuestionRequestService.assignQuestionToRequest(request.id, selectedStage, question);
+      // 選択問題の場合のみoptionsを追加
+      if (questionData.type === 'multiple_choice') {
+        const validOptions = questionData.options.filter(opt => opt.trim());
+        if (validOptions.length >= 2) {
+          cleanQuestionData.options = validOptions;
+        }
+      }
+
+      // 正解が入力されている場合のみ追加
+      if (questionData.answer.trim()) {
+        cleanQuestionData.answer = questionData.answer.trim();
+      }
+
+      // 解説が入力されている場合のみ追加
+      if (questionData.explanation.trim()) {
+        cleanQuestionData.explanation = questionData.explanation.trim();
+      }
+
+      console.log('📝 Clean question data:', cleanQuestionData);
+
+      await ReviewQuestionRequestService.assignQuestionToRequest(request.id, selectedStage, cleanQuestionData);
       
       // フォームをリセット
       setQuestionData({
@@ -409,6 +427,9 @@ export function QuestionAssignmentModal({
                           </div>
                         ))}
                       </div>
+                      <p className="text-sm text-gray-500">
+                        選択問題の場合は最低2つの選択肢を入力してください
+                      </p>
                     </div>
                   )}
 

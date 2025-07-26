@@ -10,7 +10,7 @@ import {
     Timestamp,
     getDoc
   } from 'firebase/firestore';
-  import { db, collections } from './firebase';
+  import { db, collections } from '../firebase';
   import { ReviewQuestionRequest, ReviewQuestion, ReviewStage, ReviewQuestionAssignment } from '@/types/review';
   
   export class ReviewQuestionRequestService {

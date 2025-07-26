@@ -41,6 +41,11 @@ export class StudyRecordService {
       cleanRecord.shouldReview = record.shouldReview;
     }
 
+    // 復習問題リクエストフラグを保存（新規追加）
+    if (record.requestReviewQuestions !== undefined) {
+      cleanRecord.requestReviewQuestions = record.requestReviewQuestions;
+    }
+
     console.log('Creating study record:', cleanRecord);
 
     const docRef = await addDoc(collection(db, collections.studyRecords), cleanRecord);
@@ -141,6 +146,38 @@ export class StudyRecordService {
       return records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } catch (error) {
       console.error('❌ Error fetching review records:', error);
+      return [];
+    }
+  }
+
+  // 復習問題リクエスト対象の記録取得（新規追加）
+  static async getRequestReviewQuestionRecords(userId: string): Promise<StudyRecord[]> {
+    try {
+      console.log('🔍 Fetching request review question records for user:', userId);
+      
+      const q = query(
+        collection(db, collections.studyRecords),
+        where('userId', '==', userId),
+        where('requestReviewQuestions', '==', true)
+      );
+      
+      const snapshot = await getDocs(q);
+      console.log('📄 Request review question records count:', snapshot.docs.length);
+      
+      const records = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0),
+          createdAt: data.createdAt?.toDate() || new Date()
+        };
+      }) as StudyRecord[];
+
+      // 新しい順にソート
+      return records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    } catch (error) {
+      console.error('❌ Error fetching request review question records:', error);
       return [];
     }
   }
@@ -265,6 +302,59 @@ export class StudyRecordService {
         },
         recentDays: []
       };
+    }
+  }
+
+  // 学習記録の検索（新規追加）
+  static async searchRecords(userId: string, searchQuery: string): Promise<StudyRecord[]> {
+    try {
+      const allRecords = await this.getRecordsByUser(userId);
+      
+      if (!searchQuery.trim()) {
+        return allRecords;
+      }
+
+      const query = searchQuery.toLowerCase().trim();
+      
+      return allRecords.filter(record => 
+        record.content.toLowerCase().includes(query) ||
+        (record.details && record.details.toLowerCase().includes(query)) ||
+        record.subject.toLowerCase().includes(query) ||
+        (record.memo && record.memo.toLowerCase().includes(query))
+      );
+    } catch (error) {
+      console.error('❌ Error searching records:', error);
+      return [];
+    }
+  }
+
+  // 期間別記録取得（新規追加）
+  static async getRecordsByDateRange(
+    userId: string, 
+    startDate: string, 
+    endDate: string
+  ): Promise<StudyRecord[]> {
+    try {
+      const allRecords = await this.getRecordsByUser(userId);
+      
+      return allRecords.filter(record => 
+        record.studyDate >= startDate && record.studyDate <= endDate
+      );
+    } catch (error) {
+      console.error('❌ Error fetching records by date range:', error);
+      return [];
+    }
+  }
+
+  // 教科別記録取得（新規追加）
+  static async getRecordsBySubject(userId: string, subject: Subject): Promise<StudyRecord[]> {
+    try {
+      const allRecords = await this.getRecordsByUser(userId);
+      
+      return allRecords.filter(record => record.subject === subject);
+    } catch (error) {
+      console.error('❌ Error fetching records by subject:', error);
+      return [];
     }
   }
 }

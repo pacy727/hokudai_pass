@@ -108,6 +108,8 @@ export interface ReviewResult {
   timeSpent: number; // 所要時間（秒）
   feedback?: string; // 学習者のフィードバック
   createdAt: Date;
+  stage: ReviewStage; // ← これを追加
+  understanding: number; // ← これを追加
 }
 
 // 学習ログ
