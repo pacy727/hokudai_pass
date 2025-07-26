@@ -32,154 +32,30 @@ import { useRouter } from 'next/navigation';
 import { Subject, StudyRecord } from '@/types/study';
 import { StudyDeclaration } from '@/types/realtime';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { collection, getDocs, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { db, collections } from '@/lib/firebase';
 
-// ダミーデータ（実際の実装では StudyRecordService から取得）
-const mockRankingData = {
-  total: [
-    { rank: 1, name: '佐藤花子', hours: 1425, percentage: 95, icon: '🥇' },
-    { rank: 2, name: '田中太郎', hours: 1298, percentage: 86, icon: '🥈' },
-    { rank: 3, name: '鈴木美咲', hours: 1156, percentage: 77, icon: '🥉' },
-    { rank: 4, name: '高橋理恵', hours: 945, percentage: 63, icon: '4位' },
-    { rank: 5, name: '山田次郎', hours: 756, percentage: 50, icon: '5位' }
-  ],
-  subjects: {
-    '英語': [
-      { rank: 1, name: '佐藤花子', hours: 385, icon: '🥇' },
-      { rank: 2, name: '田中太郎', hours: 342, icon: '🥈' },
-      { rank: 3, name: '鈴木美咲', hours: 298, icon: '🥉' },
-      { rank: 4, name: '高橋理恵', hours: 256, icon: '4位' },
-      { rank: 5, name: '山田次郎', hours: 203, icon: '5位' }
-    ],
-    '数学': [
-      { rank: 1, name: '田中太郎', hours: 425, icon: '🥇' },
-      { rank: 2, name: '佐藤花子', hours: 402, icon: '🥈' },
-      { rank: 3, name: '山田次郎', hours: 356, icon: '🥉' },
-      { rank: 4, name: '鈴木美咲', hours: 298, icon: '4位' },
-      { rank: 5, name: '高橋理恵', hours: 245, icon: '5位' }
-    ],
-    '国語': [
-      { rank: 1, name: '鈴木美咲', hours: 324, icon: '🥇' },
-      { rank: 2, name: '佐藤花子', hours: 298, icon: '🥈' },
-      { rank: 3, name: '高橋理恵', hours: 276, icon: '🥉' },
-      { rank: 4, name: '田中太郎', hours: 234, icon: '4位' },
-      { rank: 5, name: '山田次郎', hours: 198, icon: '5位' }
-    ],
-    '情報': [
-      { rank: 1, name: '田中太郎', hours: 234, icon: '🥇' },
-      { rank: 2, name: '山田次郎', hours: 198, icon: '🥈' },
-      { rank: 3, name: '佐藤花子', hours: 176, icon: '🥉' },
-      { rank: 4, name: '鈴木美咲', hours: 145, icon: '4位' },
-      { rank: 5, name: '高橋理恵', hours: 123, icon: '5位' }
-    ],
-    '理科': [
-      { rank: 1, name: '佐藤花子', hours: 298, icon: '🥇' },
-      { rank: 2, name: '田中太郎', hours: 276, icon: '🥈' },
-      { rank: 3, name: '高橋理恵', hours: 234, icon: '🥉' },
-      { rank: 4, name: '鈴木美咲', hours: 198, icon: '4位' },
-      { rank: 5, name: '山田次郎', hours: 156, icon: '5位' }
-    ],
-    '社会': [
-      { rank: 1, name: '高橋理恵', hours: 287, icon: '🥇' },
-      { rank: 2, name: '鈴木美咲', hours: 256, icon: '🥈' },
-      { rank: 3, name: '佐藤花子', hours: 234, icon: '🥉' },
-      { rank: 4, name: '田中太郎', hours: 198, icon: '4位' },
-      { rank: 5, name: '山田次郎', hours: 176, icon: '5位' }
-    ]
-  }
-};
-
-// 直近7日間の学習時間データ（ダミー）
-const mockChartData = [
-  { date: '7/17', minutes: 420, dateLabel: '7/17(木)' },
-  { date: '7/18', minutes: 380, dateLabel: '7/18(金)' },
-  { date: '7/19', minutes: 240, dateLabel: '7/19(土)' },
-  { date: '7/20', minutes: 480, dateLabel: '7/20(日)' },
-  { date: '7/21', minutes: 360, dateLabel: '7/21(月)' },
-  { date: '7/22', minutes: 450, dateLabel: '7/22(火)' },
-  { date: '7/23', minutes: 390, dateLabel: '7/23(水)' }
-];
-
-// 簡素化された学習宣言ダミーデータ
-const mockSimpleDeclarations = [
-  { id: '1', userName: '佐藤花子', declaration: '19:00から数学3時間頑張る！', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-  { id: '2', userName: '田中太郎', declaration: '今日は英語の長文読解を2時間集中してやります', createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000) },
-  { id: '3', userName: '鈴木美咲', declaration: '国語の古文単語暗記がんばる〜', createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000) },
-  { id: '4', userName: '高橋理恵', declaration: '物理の力学問題を徹底的に解く！', createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000) },
-  { id: '5', userName: '山田次郎', declaration: '世界史の近現代史まとめ作業', createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000) },
-  { id: '6', userName: '佐藤花子', declaration: '英語のリスニング練習1時間', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  { id: '7', userName: '田中太郎', declaration: '数学の微積分基礎固め', createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000) },
-  { id: '8', userName: '鈴木美咲', declaration: '化学の有機化学復習', createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
-  { id: '9', userName: '高橋理恵', declaration: '現代文の読解演習', createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
-  { id: '10', userName: '山田次郎', declaration: '情報のプログラミング基礎', createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
-  { id: '11', userName: '佐藤花子', declaration: '今日は早起きして勉強するぞ！', createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-  { id: '12', userName: '田中太郎', declaration: '模試の復習をしっかりやります', createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) },
-  { id: '13', userName: '鈴木美咲', declaration: '明日のテスト対策頑張る', createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) },
-  { id: '14', userName: '高橋理恵', declaration: '図書館で集中して勉強してきます', createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000) },
-  { id: '15', userName: '山田次郎', declaration: '夏休みの勉強計画を立てました', createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000) }
-];
+// ユーザー統計データの型定義
+interface UserStats {
+  userId: string;
+  userName: string;
+  totalHours: number;
+  subjectHours: Record<Subject, number>;
+}
 
 // タイムラインアイテムの型定義
 interface TimelineItem {
   id: string;
-  type: 'study_record' | 'declaration';
+  type: 'study_record';
   userName: string;
   timestamp: Date;
-  subject?: Subject;
+  subject: Subject;
   content: string;
   details?: string;
-  studyTime?: number; // 分
+  studyTime: number; // 分
   icon: string;
   color: string;
 }
-
-// 全体タイムライン用のダミーデータ生成
-const generateTimelineData = (): TimelineItem[] => {
-  const timelineItems: TimelineItem[] = [];
-  
-  // 学習宣言をタイムラインアイテムに変換
-  mockSimpleDeclarations.forEach(declaration => {
-    timelineItems.push({
-      id: `decl_${declaration.id}`,
-      type: 'declaration',
-      userName: declaration.userName,
-      timestamp: declaration.createdAt,
-      content: declaration.declaration,
-      icon: '📢',
-      color: 'bg-blue-100 border-blue-300 text-blue-800'
-    });
-  });
-  
-  // 学習記録のダミーデータを追加
-  const studyRecords = [
-    { userName: '佐藤花子', subject: '数学' as Subject, content: '二次関数の応用問題', studyTime: 120, time: new Date(Date.now() - 1 * 60 * 60 * 1000) },
-    { userName: '田中太郎', subject: '英語' as Subject, content: '長文読解演習', studyTime: 90, time: new Date(Date.now() - 3 * 60 * 60 * 1000) },
-    { userName: '鈴木美咲', subject: '国語' as Subject, content: '古文の文法確認', studyTime: 75, time: new Date(Date.now() - 5 * 60 * 60 * 1000) },
-    { userName: '高橋理恵', subject: '理科' as Subject, content: '物理の力学基礎', studyTime: 105, time: new Date(Date.now() - 7 * 60 * 60 * 1000) },
-    { userName: '山田次郎', subject: '社会' as Subject, content: '世界史近現代', studyTime: 80, time: new Date(Date.now() - 9 * 60 * 60 * 1000) },
-    { userName: '佐藤花子', subject: '英語' as Subject, content: '単語暗記', studyTime: 60, time: new Date(Date.now() - 11 * 60 * 60 * 1000) },
-    { userName: '田中太郎', subject: '数学' as Subject, content: '微積分基礎', studyTime: 110, time: new Date(Date.now() - 13 * 60 * 60 * 1000) },
-    { userName: '鈴木美咲', subject: '理科' as Subject, content: '化学の有機化学', studyTime: 95, time: new Date(Date.now() - 25 * 60 * 60 * 1000) },
-    { userName: '高橋理恵', subject: '国語' as Subject, content: '現代文読解', studyTime: 85, time: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
-    { userName: '山田次郎', subject: '情報' as Subject, content: 'プログラミング基礎', studyTime: 120, time: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) }
-  ];
-  
-  studyRecords.forEach((record, index) => {
-    timelineItems.push({
-      id: `study_${index}`,
-      type: 'study_record',
-      userName: record.userName,
-      timestamp: record.time,
-      subject: record.subject,
-      content: record.content,
-      studyTime: record.studyTime,
-      icon: '📚',
-      color: 'bg-green-100 border-green-300 text-green-800'
-    });
-  });
-  
-  // 時系列順にソート（新しい順）
-  return timelineItems.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-};
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth();
@@ -194,8 +70,19 @@ export default function DashboardPage() {
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
   const [timelineData, setTimelineData] = useState<TimelineItem[]>([]);
   const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [currentTab, setCurrentTab] = useState('studying');
+  
+  // 全ユーザーデータ用の状態
+  const [userRankingData, setUserRankingData] = useState<Record<string, UserStats[]>>({});
+  const [allStudyRecords, setAllStudyRecords] = useState<StudyRecord[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [userNamesMap, setUserNamesMap] = useState<Map<string, string>>(new Map());
+  
+  // デバッグ情報
+  const [debugInfo, setDebugInfo] = useState<Record<string, any>>({});
 
-  // useEffect でリダイレクト処理（レンダリング中の状態更新を回避）
+  // useEffect でリダイレクト処理
   useEffect(() => {
     if (!isLoading && !user) {
       console.log('🔄 Redirecting to login from dashboard');
@@ -203,11 +90,244 @@ export default function DashboardPage() {
     }
   }, [isLoading, user, router]);
 
-  // タイムラインデータの初期化
+  // 全ユーザーデータの読み込み
   useEffect(() => {
-    const data = generateTimelineData();
-    setTimelineData(data);
-  }, []);
+    if (user) {
+      loadAllUsersData();
+    }
+  }, [user]);
+
+  // 全ユーザーのデータを取得
+  const loadAllUsersData = async () => {
+    if (!user) return;
+    
+    setIsLoadingData(true);
+    try {
+      console.log('📊 Loading all users dashboard data...');
+      
+      // 過去30日間の全ユーザーの学習記録を取得
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+      
+      // Firestoreから全ユーザーの学習記録を取得
+      const q = query(
+        collection(db, collections.studyRecords),
+        where('studyDate', '>=', thirtyDaysAgoStr),
+        orderBy('studyDate', 'desc'),
+        limit(1000) // 全ユーザー対応で増加
+      );
+      
+      const snapshot = await getDocs(q);
+      const records = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0),
+          createdAt: data.createdAt?.toDate() || new Date()
+        };
+      }) as StudyRecord[];
+      
+      console.log('📚 All users study records loaded:', records.length);
+      setAllStudyRecords(records);
+      
+      // ユーザー名を取得
+      const userIds = Array.from(new Set(records.map(r => r.userId)));
+      const userNames = await loadUserNames(userIds);
+      setUserNamesMap(userNames);
+      
+      // デバッグ情報を設定
+      const debug = {
+        totalRecords: records.length,
+        uniqueUsers: userIds.length,
+        declarationsCount: declarations.length,
+        sampleRecord: records[0] || null,
+        userIds: userIds.slice(0, 5), // 最初の5人のIDを表示
+        currentUserId: user.uid,
+        currentUserName: user.displayName
+      };
+      setDebugInfo(debug);
+      console.log('🔍 Debug info:', debug);
+      
+      // 全ユーザーの統計計算
+      calculateAllUsersStats(records, userNames);
+      
+      // タイムラインデータ生成（全ユーザーの学習記録のみ）
+      generateTimelineData(records, userNames);
+      
+      // チャートデータ生成（全ユーザーの合計）
+      generateAllUsersChartData(records);
+      
+    } catch (error) {
+      console.error('❌ Error loading all users dashboard data:', error);
+      setDebugInfo(prev => ({ ...prev, error: error instanceof Error ? error.message : 'Unknown error' }));
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // ユーザー名を取得
+  const loadUserNames = async (userIds: string[]): Promise<Map<string, string>> => {
+    const userNames = new Map<string, string>();
+    
+    console.log('👥 Loading user names for', userIds.length, 'users');
+    
+    // バッチでユーザー情報を取得（Firestoreの制限を考慮）
+    const batchSize = 10;
+    for (let i = 0; i < userIds.length; i += batchSize) {
+      const batch = userIds.slice(i, i + batchSize);
+      
+      try {
+        // users コレクションから直接取得
+        const usersQuery = query(collection(db, collections.users));
+        const usersSnapshot = await getDocs(usersQuery);
+        
+        usersSnapshot.docs.forEach(doc => {
+          if (batch.includes(doc.id)) {
+            const userData = doc.data();
+            userNames.set(doc.id, userData.displayName || 'ユーザー');
+          }
+        });
+        
+      } catch (error) {
+        console.warn('Failed to load user names for batch:', batch, error);
+        // エラーの場合はデフォルト名を設定
+        batch.forEach(userId => {
+          if (!userNames.has(userId)) {
+            userNames.set(userId, userId === user?.uid ? user.displayName : 'ユーザー');
+          }
+        });
+      }
+    }
+    
+    console.log('✅ User names loaded:', userNames.size);
+    return userNames;
+  };
+
+  // 全ユーザーの統計計算
+  const calculateAllUsersStats = (records: StudyRecord[], userNames: Map<string, string>) => {
+    console.log('📈 Calculating all users stats...');
+    
+    const userStatsMap = new Map<string, UserStats>();
+    
+    // 各ユーザーの統計を計算
+    records.forEach(record => {
+      const userId = record.userId;
+      const userName = userNames.get(userId) || 'ユーザー';
+      
+      if (!userStatsMap.has(userId)) {
+        userStatsMap.set(userId, {
+          userId,
+          userName,
+          totalHours: 0,
+          subjectHours: {
+            英語: 0, 数学: 0, 国語: 0, 情報: 0,
+            理科: 0, 理科1: 0, 理科2: 0,
+            社会: 0, 社会1: 0, 社会2: 0
+          }
+        });
+      }
+      
+      const stats = userStatsMap.get(userId)!;
+      const hours = (record.studyMinutes || 0) / 60;
+      stats.totalHours += hours;
+      stats.subjectHours[record.subject] = (stats.subjectHours[record.subject] || 0) + hours;
+    });
+    
+    const userStatsList = Array.from(userStatsMap.values());
+    console.log('📊 User stats calculated for', userStatsList.length, 'users');
+    
+    // ランキングデータ生成
+    const rankingData: Record<string, UserStats[]> = {};
+    
+    // 総合ランキング
+    rankingData['合計'] = userStatsList
+      .sort((a, b) => b.totalHours - a.totalHours)
+      .slice(0, 20); // トップ20
+    
+    // 科目別ランキング
+    const subjects: Subject[] = ['英語', '数学', '国語', '情報', '理科', '理科1', '理科2', '社会', '社会1', '社会2'];
+    subjects.forEach(subject => {
+      rankingData[subject] = userStatsList
+        .filter(stats => stats.subjectHours[subject] > 0)
+        .sort((a, b) => b.subjectHours[subject] - a.subjectHours[subject])
+        .slice(0, 20); // トップ20
+    });
+    
+    setUserRankingData(rankingData);
+    console.log('🏆 Ranking data generated');
+  };
+
+  // タイムラインデータ生成（全ユーザーの学習記録のみ）
+  const generateTimelineData = (records: StudyRecord[], userNames: Map<string, string>) => {
+    console.log('🕒 Generating timeline data for all users...');
+    
+    const timelineItems: TimelineItem[] = [];
+    
+    // 学習記録をタイムラインに追加（最新100件）
+    records.slice(0, 100).forEach(record => {
+      const userName = userNames.get(record.userId) || 'ユーザー';
+      
+      timelineItems.push({
+        id: `study_${record.id}`,
+        type: 'study_record',
+        userName: userName,
+        timestamp: record.createdAt,
+        subject: record.subject,
+        content: record.content,
+        details: record.details,
+        studyTime: record.studyMinutes || 0,
+        icon: '📚',
+        color: 'bg-green-100 border-green-300 text-green-800'
+      });
+    });
+    
+    // 時系列順にソート（新しい順）
+    const sortedItems = timelineItems.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    
+    console.log('✅ Timeline items generated:', sortedItems.length);
+    setTimelineData(sortedItems);
+  };
+
+  // 全ユーザーのチャートデータ生成（直近10日間の合計）
+  const generateAllUsersChartData = (records: StudyRecord[]) => {
+    console.log('📊 Generating chart data for all users...');
+    
+    const today = new Date();
+    const chartData = [];
+    
+    // 日付ごとの全ユーザー学習時間を集計
+    const studyByDate: Record<string, number> = {};
+    
+    records.forEach(record => {
+      const date = record.studyDate;
+      if (!studyByDate[date]) {
+        studyByDate[date] = 0;
+      }
+      studyByDate[date] += record.studyMinutes || 0;
+    });
+    
+    console.log('📅 All users study by date:', studyByDate);
+    
+    // 直近10日間のデータを生成
+    for (let i = 9; i >= 0; i--) {
+      const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+      const dayOfWeek = dayNames[date.getDay()];
+      const shortDate = `${date.getMonth() + 1}/${date.getDate()}`;
+      
+      chartData.push({
+        date: shortDate,
+        minutes: studyByDate[dateStr] || 0,
+        dateLabel: `${shortDate}(${dayOfWeek})`
+      });
+    }
+    
+    console.log('📈 All users chart data generated:', chartData);
+    setChartData(chartData);
+  };
 
   const handlePostDeclaration = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,7 +335,6 @@ export default function DashboardPage() {
 
     setIsPosting(true);
     try {
-      // 簡素化された宣言投稿（教科・時間情報は不要）
       await postDeclaration(newDeclaration.trim());
       setNewDeclaration('');
       toast({
@@ -231,12 +350,6 @@ export default function DashboardPage() {
     } finally {
       setIsPosting(false);
     }
-  };
-
-  // 1か月以内の宣言のみフィルタリング
-  const filterRecentDeclarations = (declarations: any[]) => {
-    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    return declarations.filter(declaration => declaration.createdAt > oneMonthAgo);
   };
 
   // 利用可能科目の取得
@@ -271,66 +384,65 @@ export default function DashboardPage() {
     }
   };
 
-  // ランキングデータ取得
+  // 現在のランキングデータ取得
   const getCurrentRankingData = () => {
-    if (selectedSubject === '合計') {
-      return mockRankingData.total;
-    }
+    const data = userRankingData[selectedSubject] || [];
     
-    // カスタム科目名から実際の科目キーを取得
-    const availableSubjects = getAvailableSubjects();
-    const actualSubject = availableSubjects.find(s => getSubjectDisplayName(s) === selectedSubject);
-    
-    if (actualSubject) {
-      const subjectKey = actualSubject === '社会1' ? '社会' : 
-                        actualSubject === '理科1' ? '理科' : actualSubject;
-      return (mockRankingData.subjects as Record<string, typeof mockRankingData.subjects['英語']>)[subjectKey] || mockRankingData.subjects['英語'];
-    }
-    
-    return (mockRankingData.subjects as Record<string, typeof mockRankingData.subjects['英語']>)[selectedSubject] || mockRankingData.subjects['英語'];
+    // ランキング形式に変換
+    return data.map((stats, index) => ({
+      rank: index + 1,
+      name: stats.userName,
+      hours: selectedSubject === '合計' 
+        ? Math.round(stats.totalHours * 10) / 10
+        : Math.round((stats.subjectHours[selectedSubject as Subject] || 0) * 10) / 10,
+      icon: index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}位`,
+      isCurrentUser: stats.userId === user?.uid
+    }));
   };
 
-  // 表示する宣言を取得（1か月以内 + 表示制限）
+  // 表示する宣言を取得
   const getDisplayDeclarations = () => {
-    const recentDeclarations = filterRecentDeclarations(mockSimpleDeclarations);
+    const recentDeclarations = declarations.slice(0, 50);
     return showAllDeclarations ? recentDeclarations : recentDeclarations.slice(0, 15);
   };
 
   // タイムライン表示制限
   const getDisplayTimelineItems = () => {
-    return showAllTimeline ? timelineData : timelineData.slice(0, 20);
+    return showAllTimeline ? timelineData : timelineData.slice(0, 30);
   };
 
   // ランキング表示コンポーネント
-  const RankingList = ({ data, showPercentage = false }: { data: any[], showPercentage?: boolean }) => (
+  const RankingList = ({ data }: { data: any[] }) => (
     <div className="space-y-3">
-      {data.map((member) => (
-        <div key={member.rank} className={`flex items-center justify-between p-3 rounded-lg ${
-          member.name === user?.displayName ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
-        }`}>
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-lg">{member.icon}</span>
-            <div>
-              <span className={`font-medium ${member.name === user?.displayName ? 'text-blue-700' : ''}`}>
-                {member.name}
-                {member.name === user?.displayName && (
-                  <Badge variant="outline" className="ml-2">あなた</Badge>
-                )}
-              </span>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="font-bold">{member.hours}時間</div>
-            {showPercentage && member.percentage && (
-              <div className="text-sm text-muted-foreground">
-                ({member.percentage}%)
-                {member.percentage < 60 && <span className="text-yellow-600"> ⚠️</span>}
-                {member.percentage >= 90 && <span className="text-green-600"> 🎉</span>}
-              </div>
-            )}
+      {data.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          データがありません
+          <div className="text-xs mt-2 text-gray-400">
+            デバッグ: 選択科目={selectedSubject}, ランキングデータ数={Object.keys(userRankingData).length}
           </div>
         </div>
-      ))}
+      ) : (
+        data.map((member) => (
+          <div key={member.rank} className={`flex items-center justify-between p-3 rounded-lg ${
+            member.isCurrentUser ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+          }`}>
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-lg">{member.icon}</span>
+              <div>
+                <span className={`font-medium ${member.isCurrentUser ? 'text-blue-700' : ''}`}>
+                  {member.name}
+                  {member.isCurrentUser && (
+                    <Badge variant="outline" className="ml-2">あなた</Badge>
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="font-bold">{member.hours}時間</div>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 
@@ -339,7 +451,7 @@ export default function DashboardPage() {
     const hours = Math.floor(value / 60);
     const minutes = value % 60;
     const timeString = hours > 0 ? `${hours}時間${minutes}分` : `${minutes}分`;
-    return [timeString, '学習時間'];
+    return [timeString, '全ユーザー合計学習時間'];
   };
 
   // タイムラインアイテムコンポーネント
@@ -353,46 +465,41 @@ export default function DashboardPage() {
       <div className="flex-1 min-w-0">
         <div className="flex items-center space-x-2 mb-1">
           <span className="font-medium text-sm">{item.userName}</span>
-          {item.type === 'study_record' && item.subject && (
-            <Badge variant="outline" className="text-xs">
-              {getSubjectDisplayName(item.subject)}
-            </Badge>
-          )}
+          <Badge variant="outline" className="text-xs">
+            {getSubjectDisplayName(item.subject)}
+          </Badge>
           <span className="text-xs text-gray-500">
             {formatDistanceToNow(item.timestamp, { locale: ja })}前
           </span>
         </div>
         <div className="text-sm text-gray-800 mb-1">
-          {item.type === 'study_record' ? (
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-3 w-3 text-gray-500" />
-              <span>{item.content}</span>
-              {item.studyTime && (
-                <span className="text-xs text-gray-500">
-                  ({Math.floor(item.studyTime / 60) > 0 
-                    ? `${Math.floor(item.studyTime / 60)}時間${item.studyTime % 60}分` 
-                    : `${item.studyTime}分`})
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <MessageSquare className="h-3 w-3 text-gray-500" />
-              <span>{item.content}</span>
-            </div>
-          )}
+          <div className="flex items-center space-x-2">
+            <BookOpen className="h-3 w-3 text-gray-500" />
+            <span>{item.content}</span>
+            <span className="text-xs text-gray-500">
+              ({Math.floor(item.studyTime / 60) > 0 
+                ? `${Math.floor(item.studyTime / 60)}時間${item.studyTime % 60}分` 
+                : `${item.studyTime}分`})
+            </span>
+          </div>
         </div>
+        {item.details && (
+          <div className="text-xs text-gray-500 mt-1">
+            {item.details}
+          </div>
+        )}
       </div>
     </div>
   );
 
   // ローディング中
-  if (isLoading || statusLoading || declarationLoading) {
+  if (isLoading || statusLoading || declarationLoading || isLoadingData) {
     return (
       <div className="flex justify-center items-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p>読み込み中...</p>
+          {isLoadingData && <p className="text-sm text-gray-500 mt-2">全ユーザーのデータを取得中...</p>}
         </div>
       </div>
     );
@@ -418,7 +525,46 @@ export default function DashboardPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6 max-w-4xl">
-      <Tabs defaultValue="studying" className="w-full">
+      {/* デバッグ情報表示 */}
+      <Card className="bg-yellow-50 border-yellow-200">
+        <CardHeader>
+          <CardTitle className="text-sm">🔍 デバッグ情報（全ユーザーデータ版）</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <strong>データ件数:</strong><br/>
+              全学習記録: {debugInfo.totalRecords || 0}件<br/>
+              ユーザー数: {debugInfo.uniqueUsers || 0}人<br/>
+              学習宣言: {debugInfo.declarationsCount || 0}件<br/>
+              タイムライン: {timelineData.length}件<br/>
+              チャート: {chartData.length}件
+            </div>
+            <div>
+              <strong>現在のユーザー:</strong><br/>
+              ID: {debugInfo.currentUserId}<br/>
+              名前: {debugInfo.currentUserName}<br/>
+              <strong>ユーザー名取得:</strong><br/>
+              {userNamesMap.size}人分取得済み
+            </div>
+          </div>
+          {debugInfo.error && (
+            <div className="mt-2 text-red-600">
+              <strong>エラー:</strong> {debugInfo.error}
+            </div>
+          )}
+          {debugInfo.sampleRecord && (
+            <details className="mt-2">
+              <summary className="cursor-pointer">サンプル学習記録</summary>
+              <pre className="text-xs bg-gray-100 p-2 rounded mt-1 overflow-auto">
+                {JSON.stringify(debugInfo.sampleRecord, null, 2)}
+              </pre>
+            </details>
+          )}
+        </CardContent>
+      </Card>
+
+      <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
         <TabsList className="grid w-full grid-cols-5 h-12">
           <TabsTrigger value="studying" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
@@ -430,15 +576,15 @@ export default function DashboardPage() {
           </TabsTrigger>
           <TabsTrigger value="timeline" className="flex items-center gap-2">
             <Clock className="w-4 h-4" />
-            タイムライン
+            学習記録タイムライン
           </TabsTrigger>
           <TabsTrigger value="ranking" className="flex items-center gap-2">
             <Trophy className="w-4 h-4" />
-            ランキング
+            全体ランキング
           </TabsTrigger>
           <TabsTrigger value="chart" className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
-            チャート
+            全体チャート
           </TabsTrigger>
         </TabsList>
 
@@ -509,44 +655,48 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 mb-3">
+              <form onSubmit={handlePostDeclaration} className="flex items-center gap-2 mb-3">
                 <Input
                   placeholder="学習宣言を投稿"
                   value={newDeclaration}
                   onChange={(e) => setNewDeclaration(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !isPosting) {
-                      handlePostDeclaration(e);
-                    }
-                  }}
                   className="flex-1"
                 />
-                <Button onClick={handlePostDeclaration} disabled={!newDeclaration.trim() || isPosting}>
+                <Button type="submit" disabled={!newDeclaration.trim() || isPosting}>
                   {isPosting ? '投稿中...' : '投稿'}
                 </Button>
-              </div>
+              </form>
               <div className="space-y-3">
-                {getDisplayDeclarations().map((declaration) => (
-                  <div key={declaration.id} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{declaration.userName}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-800">{declaration.declaration}</p>
+                {getDisplayDeclarations().length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    学習宣言がありません
+                    <div className="text-xs mt-2 text-gray-400">
+                      デバッグ: 宣言データ数={declarations.length}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  getDisplayDeclarations().map((declaration) => (
+                    <div key={declaration.id} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{declaration.userName}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-800">{declaration.declaration}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
                 {declarations.length > 15 && (
                   <Button
                     variant="outline"
                     onClick={() => setShowAllDeclarations(!showAllDeclarations)}
                     className="w-full"
                   >
-                    {showAllDeclarations ? '宣言を閉じる' : '宣言をすべて表示'}
+                    {showAllDeclarations ? '宣言を閉じる' : 'さらに表示'}
                   </Button>
                 )}
               </div>
@@ -554,46 +704,38 @@ export default function DashboardPage() {
           </Card>
         </TabsContent>
 
-        {/* タイムラインタブ */}
+        {/* タイムラインタブ（全ユーザーの学習記録のみ） */}
         <TabsContent value="timeline" className="space-y-4 mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                📅 タイムライン
+                📚 学習記録タイムライン（全ユーザー）
                 <Badge variant="default" className="bg-yellow-500">
                   {timelineData.length}件
                 </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 mb-3">
-                <Select onValueChange={(value) => setSelectedSubject(value)} value={selectedSubject}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="科目を選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjectOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={() => setShowAllTimeline(!showAllTimeline)} className="flex-shrink-0">
-                  {showAllTimeline ? 'タイムラインを閉じる' : 'タイムラインをすべて表示'}
-                </Button>
-              </div>
               <div className="space-y-3">
-                {getDisplayTimelineItems().map((item) => (
-                  <TimelineItemComponent key={item.id} item={item} />
-                ))}
-                {timelineData.length > 20 && (
+                {getDisplayTimelineItems().length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    学習記録がありません
+                    <div className="text-xs mt-2 text-gray-400">
+                      デバッグ: 全ユーザー学習記録数={timelineData.length}
+                    </div>
+                  </div>
+                ) : (
+                  getDisplayTimelineItems().map((item) => (
+                    <TimelineItemComponent key={item.id} item={item} />
+                  ))
+                )}
+                {timelineData.length > 30 && (
                   <Button
                     variant="outline"
                     onClick={() => setShowAllTimeline(!showAllTimeline)}
                     className="w-full"
                   >
-                    {showAllTimeline ? 'タイムラインを閉じる' : 'タイムラインをすべて表示'}
+                    {showAllTimeline ? 'タイムラインを閉じる' : 'さらに表示'}
                   </Button>
                 )}
               </div>
@@ -601,14 +743,14 @@ export default function DashboardPage() {
           </Card>
         </TabsContent>
 
-        {/* ランキングタブ */}
+        {/* ランキングタブ（全ユーザー） */}
         <TabsContent value="ranking" className="space-y-4 mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                🏆 ランキング
+                🏆 全ユーザーランキング
                 <Badge variant="default" className="bg-red-500">
-                  {selectedSubject === '合計' ? mockRankingData.total.length : getCurrentRankingData().length}位
+                  TOP20
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -626,73 +768,113 @@ export default function DashboardPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button onClick={() => setShowAllDeclarations(!showAllDeclarations)} className="flex-shrink-0">
-                  {showAllDeclarations ? 'ランキングを閉じる' : 'ランキングをすべて表示'}
-                </Button>
+                <span className="text-sm text-gray-600">
+                  過去30日間の学習時間ランキング
+                </span>
               </div>
               <div className="space-y-3">
                 <RankingList data={getCurrentRankingData()} />
-                {selectedSubject !== '合計' && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
-                    className="w-full"
-                  >
-                    {showAllDeclarations ? 'ランキングを閉じる' : 'ランキングをすべて表示'}
-                  </Button>
-                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* チャートタブ */}
+        {/* チャートタブ（全ユーザーの合計） */}
         <TabsContent value="chart" className="space-y-4 mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                📊 チャート
+                📊 全ユーザー合計学習時間チャート
                 <Badge variant="default" className="bg-indigo-500">
-                  7日間
+                  直近10日
                 </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 mb-3">
-                <Select onValueChange={(value) => setSelectedSubject(value)} value={selectedSubject}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="科目を選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjectOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={() => setShowAllDeclarations(!showAllDeclarations)} className="flex-shrink-0">
-                  {showAllDeclarations ? 'チャートを閉じる' : 'チャートをすべて表示'}
-                </Button>
-              </div>
-              <div className="space-y-3">
-                <LineChart width={600} height={300} data={mockChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="dateLabel" />
-                  <YAxis />
-                  <Tooltip formatter={formatTooltip} />
-                  <Line type="monotone" dataKey="minutes" stroke="#8884d8" />
-                </LineChart>
-                {selectedSubject !== '合計' && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
-                    className="w-full"
-                  >
-                    {showAllDeclarations ? 'チャートを閉じる' : 'チャートをすべて表示'}
-                  </Button>
-                )}
-              </div>
+              {chartData.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  チャートデータがありません
+                  <div className="text-xs mt-2 text-gray-400">
+                    デバッグ: 全ユーザーチャートデータ数={chartData.length}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={chartData}
+                        margin={{
+                          top: 5,
+                          right: 30,
+                          left: 20,
+                          bottom: 5,
+                        }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 12 }}
+                          label={{ value: '分', angle: -90, position: 'insideLeft' }}
+                        />
+                        <Tooltip 
+                          formatter={formatTooltip}
+                          labelFormatter={(label) => {
+                            const data = chartData.find(d => d.date === label);
+                            return data ? data.dateLabel : label;
+                          }}
+                          contentStyle={{
+                            backgroundColor: 'white',
+                            border: '1px solid #ccc',
+                            borderRadius: '6px'
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="minutes" 
+                          stroke="#3b82f6" 
+                          strokeWidth={3}
+                          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
+                          activeDot={{ r: 7 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* 全ユーザー統計 */}
+                  <div className="grid grid-cols-3 gap-3 pt-3 border-t">
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-blue-600">
+                        {Math.round(chartData.reduce((sum, day) => sum + day.minutes, 0) / 60)}h
+                      </div>
+                      <div className="text-xs text-muted-foreground">全ユーザー10日合計</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-green-600">
+                        {chartData.length > 0 ? Math.round(chartData.reduce((sum, day) => sum + day.minutes, 0) / chartData.length) : 0}分
+                      </div>
+                      <div className="text-xs text-muted-foreground">1日平均</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-orange-600">
+                        {chartData.length > 0 ? Math.max(...chartData.map(d => d.minutes)) : 0}分
+                      </div>
+                      <div className="text-xs text-muted-foreground">最高記録日</div>
+                    </div>
+                  </div>
+                  
+                  {/* デバッグ情報 */}
+                  <details className="mt-4">
+                    <summary className="cursor-pointer text-xs text-gray-500">チャートデータ詳細</summary>
+                    <pre className="text-xs bg-gray-100 p-2 rounded mt-1 overflow-auto max-h-32">
+                      {JSON.stringify(chartData, null, 2)}
+                    </pre>
+                  </details>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
