@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { ReviewQuestionRequest, ReviewStage, ReviewQuestion } from '@/types/review';
-import { X, Plus, CheckCircle, BookOpen, Save, Clock, User, Edit } from 'lucide-react';
+import { X, Plus, CheckCircle, BookOpen, Save, Clock, User, Edit, Target, Award } from 'lucide-react';
 
 interface QuestionAssignmentModalProps {
   isOpen: boolean;
@@ -198,16 +198,96 @@ export function QuestionAssignmentModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-xl font-bold">復習問題の割り当て</h2>
-            <Badge variant="outline">
-              {request.subject} - {request.unit}
-            </Badge>
+        {/* ヘッダー - 1列にまとめて表示 */}
+        <div className="sticky top-0 bg-white border-b p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <h2 className="text-xl font-bold">復習問題の割り当て</h2>
+              <Badge variant="outline">
+                {request.subject} - {request.unit}
+              </Badge>
+            </div>
+            
+            {/* 段階選択 + 進捗状況 + 閉じるボタン */}
+            <div className="flex items-center space-x-6">
+              {/* 復習段階選択 */}
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">段階:</span>
+                {[1, 2, 3, 4, 5].map((stage) => {
+                  const assigned = isStageAssigned(stage as ReviewStage);
+                  const assignedQuestion = assignedQuestions.find(q => q.targetStage === stage);
+                  const isSelected = selectedStage === stage;
+                  
+                  return (
+                    <Button
+                      key={stage}
+                      variant={isSelected ? "default" : "outline"}
+                      size="sm"
+                      className={`h-8 w-12 text-xs transition-all ${
+                        assigned 
+                          ? isSelected
+                            ? 'bg-green-600 hover:bg-green-700 text-white border-green-600'
+                            : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200'
+                          : isSelected
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                          : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                      onClick={() => {
+                        setSelectedStage(stage as ReviewStage);
+                        if (assigned && assignedQuestion) {
+                          setEditingQuestion(null);
+                          setQuestionData({
+                            question: assignedQuestion.content || '',
+                            answer: assignedQuestion.answer || ''
+                          });
+                        } else {
+                          setEditingQuestion(null);
+                          setQuestionData({ question: '', answer: '' });
+                        }
+                      }}
+                      title={`第${stage}回復習 (${getStageSchedule(stage as ReviewStage)}) ${assigned ? '- 作成済み' : '- 未作成'}`}
+                    >
+                      {stage}
+                      {assigned && <CheckCircle className="h-2 w-2 ml-0.5" />}
+                    </Button>
+                  );
+                })}
+              </div>
+              
+              {/* 進捗状況 */}
+              <div className="text-right">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">進捗:</span>
+                  <span className="text-lg font-bold text-blue-600">{assignedQuestions.length}/5</span>
+                  <span className="text-sm text-gray-500">({Math.round((assignedQuestions.length / 5) * 100)}%)</span>
+                  {assignedQuestions.length === 5 && (
+                    <Badge variant="default" className="bg-green-600 text-white text-xs">
+                      完了
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center space-x-1 mt-1">
+                  {[1, 2, 3, 4, 5].map((stage) => (
+                    <div 
+                      key={stage}
+                      className={`w-4 h-4 rounded-full text-xs flex items-center justify-center ${
+                        isStageAssigned(stage as ReviewStage)
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-300 text-gray-600'
+                      }`}
+                      title={`第${stage}回復習 (${getStageSchedule(stage as ReviewStage)})`}
+                    >
+                      {stage}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
         </div>
 
         <div className="p-6">
@@ -242,121 +322,11 @@ export function QuestionAssignmentModal({
                     )}
                   </div>
                 </div>
-                
-                {/* 右側：進捗状況 */}
-                <div className="flex-shrink-0">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600 mb-1">
-                      {assignedQuestions.length}/5
-                    </div>
-                    <div className="text-sm text-gray-600 mb-2">問題完了</div>
-                    <div className="w-24 bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                        style={{ width: `${(assignedQuestions.length / 5) * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* 割り当て状況（コンパクト） */}
-          <Card className="mb-6">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">復習問題割り当て状況</CardTitle>
-              <p className="text-sm text-gray-600">
-                エビングハウスの忘却曲線に基づく5段階復習システム
-              </p>
-            </CardHeader>
-            <CardContent>
-              {isLoadingQuestions ? (
-                <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
-                  <span>読み込み中...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
-                  {[1, 2, 3, 4, 5].map((stage) => {
-                    const assigned = isStageAssigned(stage as ReviewStage);
-                    const assignedQuestion = assignedQuestions.find(q => q.targetStage === stage);
-                    const isSelected = selectedStage === stage;
-                    
-                    return (
-                      <div key={stage} className="space-y-2">
-                        {/* 段階ボタン */}
-                        <Button
-                          variant={assigned ? "default" : isSelected ? "secondary" : "outline"}
-                          className={`w-full h-16 flex flex-col items-center justify-center text-center transition-all ${
-                            assigned 
-                              ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' 
-                              : isSelected
-                              ? 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200'
-                              : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
-                          }`}
-                          onClick={() => {
-                            setSelectedStage(stage as ReviewStage);
-                            if (assigned && assignedQuestion) {
-                              setEditingQuestion(null);
-                              setQuestionData({
-                                question: assignedQuestion.content || '',
-                                answer: assignedQuestion.answer || ''
-                              });
-                            } else {
-                              setEditingQuestion(null);
-                              setQuestionData({ question: '', answer: '' });
-                            }
-                          }}
-                        >
-                          <div className="font-semibold text-sm">第{stage}回</div>
-                          <div className={`text-xs mt-1 ${assigned ? 'text-green-100' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
-                            {getStageSchedule(stage as ReviewStage)}
-                          </div>
-                          <div className={`text-xs mt-1 flex items-center justify-center ${assigned ? 'text-green-100' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
-                            {assigned ? (
-                              <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                <span>完了</span>
-                              </>
-                            ) : isSelected ? (
-                              <span>選択中</span>
-                            ) : (
-                              <span>未作成</span>
-                            )}
-                          </div>
-                        </Button>
-                        
-                        {/* アクションボタン */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (assigned && assignedQuestion) {
-                              setEditingQuestion(assignedQuestion);
-                              setQuestionData({
-                                question: assignedQuestion.content || '',
-                                answer: assignedQuestion.answer || ''
-                              });
-                              setSelectedStage(stage as ReviewStage);
-                            } else {
-                              setEditingQuestion(null);
-                              setQuestionData({ question: '', answer: '' });
-                              setSelectedStage(stage as ReviewStage);
-                            }
-                          }}
-                          className="w-full text-xs h-8"
-                        >
-                          {assigned ? '編集' : '作成'}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+
 
           {/* 問題作成・編集・確認フォーム */}
           {(selectedStage && (!isStageAssigned(selectedStage) || editingQuestion || (isStageAssigned(selectedStage) && !editingQuestion))) && (

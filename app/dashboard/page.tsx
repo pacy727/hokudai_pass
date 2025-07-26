@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRealtimeStudyStatus, useDeclarations } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
+import { StudyRecordService } from '@/lib/db/studyRecords';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,9 +13,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Users, MessageSquare, TrendingUp, Trophy, Medal, Award, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { 
+  Users, 
+  MessageSquare, 
+  TrendingUp, 
+  Trophy, 
+  Medal, 
+  Award, 
+  BarChart3, 
+  ChevronDown, 
+  ChevronUp,
+  Clock,
+  BookOpen,
+  User,
+  Calendar
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Subject } from '@/types/study';
+import { Subject, StudyRecord } from '@/types/study';
 import { StudyDeclaration } from '@/types/realtime';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -103,6 +118,69 @@ const mockSimpleDeclarations = [
   { id: '15', userName: '山田次郎', declaration: '夏休みの勉強計画を立てました', createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000) }
 ];
 
+// タイムラインアイテムの型定義
+interface TimelineItem {
+  id: string;
+  type: 'study_record' | 'declaration';
+  userName: string;
+  timestamp: Date;
+  subject?: Subject;
+  content: string;
+  details?: string;
+  studyTime?: number; // 分
+  icon: string;
+  color: string;
+}
+
+// 全体タイムライン用のダミーデータ生成
+const generateTimelineData = (): TimelineItem[] => {
+  const timelineItems: TimelineItem[] = [];
+  
+  // 学習宣言をタイムラインアイテムに変換
+  mockSimpleDeclarations.forEach(declaration => {
+    timelineItems.push({
+      id: `decl_${declaration.id}`,
+      type: 'declaration',
+      userName: declaration.userName,
+      timestamp: declaration.createdAt,
+      content: declaration.declaration,
+      icon: '📢',
+      color: 'bg-blue-100 border-blue-300 text-blue-800'
+    });
+  });
+  
+  // 学習記録のダミーデータを追加
+  const studyRecords = [
+    { userName: '佐藤花子', subject: '数学' as Subject, content: '二次関数の応用問題', studyTime: 120, time: new Date(Date.now() - 1 * 60 * 60 * 1000) },
+    { userName: '田中太郎', subject: '英語' as Subject, content: '長文読解演習', studyTime: 90, time: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+    { userName: '鈴木美咲', subject: '国語' as Subject, content: '古文の文法確認', studyTime: 75, time: new Date(Date.now() - 5 * 60 * 60 * 1000) },
+    { userName: '高橋理恵', subject: '理科' as Subject, content: '物理の力学基礎', studyTime: 105, time: new Date(Date.now() - 7 * 60 * 60 * 1000) },
+    { userName: '山田次郎', subject: '社会' as Subject, content: '世界史近現代', studyTime: 80, time: new Date(Date.now() - 9 * 60 * 60 * 1000) },
+    { userName: '佐藤花子', subject: '英語' as Subject, content: '単語暗記', studyTime: 60, time: new Date(Date.now() - 11 * 60 * 60 * 1000) },
+    { userName: '田中太郎', subject: '数学' as Subject, content: '微積分基礎', studyTime: 110, time: new Date(Date.now() - 13 * 60 * 60 * 1000) },
+    { userName: '鈴木美咲', subject: '理科' as Subject, content: '化学の有機化学', studyTime: 95, time: new Date(Date.now() - 25 * 60 * 60 * 1000) },
+    { userName: '高橋理恵', subject: '国語' as Subject, content: '現代文読解', studyTime: 85, time: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
+    { userName: '山田次郎', subject: '情報' as Subject, content: 'プログラミング基礎', studyTime: 120, time: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) }
+  ];
+  
+  studyRecords.forEach((record, index) => {
+    timelineItems.push({
+      id: `study_${index}`,
+      type: 'study_record',
+      userName: record.userName,
+      timestamp: record.time,
+      subject: record.subject,
+      content: record.content,
+      studyTime: record.studyTime,
+      icon: '📚',
+      color: 'bg-green-100 border-green-300 text-green-800'
+    });
+  });
+  
+  // 時系列順にソート（新しい順）
+  return timelineItems.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+};
+
 export default function DashboardPage() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
@@ -114,6 +192,8 @@ export default function DashboardPage() {
   const [isPosting, setIsPosting] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState('合計');
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
+  const [timelineData, setTimelineData] = useState<TimelineItem[]>([]);
+  const [showAllTimeline, setShowAllTimeline] = useState(false);
 
   // useEffect でリダイレクト処理（レンダリング中の状態更新を回避）
   useEffect(() => {
@@ -122,6 +202,12 @@ export default function DashboardPage() {
       router.push('/login');
     }
   }, [isLoading, user, router]);
+
+  // タイムラインデータの初期化
+  useEffect(() => {
+    const data = generateTimelineData();
+    setTimelineData(data);
+  }, []);
 
   const handlePostDeclaration = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,6 +296,11 @@ export default function DashboardPage() {
     return showAllDeclarations ? recentDeclarations : recentDeclarations.slice(0, 15);
   };
 
+  // タイムライン表示制限
+  const getDisplayTimelineItems = () => {
+    return showAllTimeline ? timelineData : timelineData.slice(0, 20);
+  };
+
   // ランキング表示コンポーネント
   const RankingList = ({ data, showPercentage = false }: { data: any[], showPercentage?: boolean }) => (
     <div className="space-y-3">
@@ -251,6 +342,50 @@ export default function DashboardPage() {
     return [timeString, '学習時間'];
   };
 
+  // タイムラインアイテムコンポーネント
+  const TimelineItemComponent = ({ item }: { item: TimelineItem }) => (
+    <div className="flex items-start space-x-4 p-4 border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
+      <div className="flex-shrink-0">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.color}`}>
+          <span className="text-lg">{item.icon}</span>
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center space-x-2 mb-1">
+          <span className="font-medium text-sm">{item.userName}</span>
+          {item.type === 'study_record' && item.subject && (
+            <Badge variant="outline" className="text-xs">
+              {getSubjectDisplayName(item.subject)}
+            </Badge>
+          )}
+          <span className="text-xs text-gray-500">
+            {formatDistanceToNow(item.timestamp, { locale: ja })}前
+          </span>
+        </div>
+        <div className="text-sm text-gray-800 mb-1">
+          {item.type === 'study_record' ? (
+            <div className="flex items-center space-x-2">
+              <BookOpen className="h-3 w-3 text-gray-500" />
+              <span>{item.content}</span>
+              {item.studyTime && (
+                <span className="text-xs text-gray-500">
+                  ({Math.floor(item.studyTime / 60) > 0 
+                    ? `${Math.floor(item.studyTime / 60)}時間${item.studyTime % 60}分` 
+                    : `${item.studyTime}分`})
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="h-3 w-3 text-gray-500" />
+              <span>{item.content}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   // ローディング中
   if (isLoading || statusLoading || declarationLoading) {
     return (
@@ -284,7 +419,7 @@ export default function DashboardPage() {
   return (
     <div className="container mx-auto px-4 py-6 space-y-6 max-w-4xl">
       <Tabs defaultValue="studying" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 h-12">
+        <TabsList className="grid w-full grid-cols-5 h-12">
           <TabsTrigger value="studying" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             学習中のメンバー
@@ -292,6 +427,10 @@ export default function DashboardPage() {
           <TabsTrigger value="declarations" className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
             学習宣言
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            タイムライン
           </TabsTrigger>
           <TabsTrigger value="ranking" className="flex items-center gap-2">
             <Trophy className="w-4 h-4" />
@@ -363,83 +502,99 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                学習宣言
+                📢 学習宣言
+                <Badge variant="default" className="bg-purple-500">
+                  {declarations.length}件
+                </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* 宣言投稿フォーム */}
-              <form onSubmit={handlePostDeclaration} className="space-y-3">
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
                 <Input
+                  placeholder="学習宣言を投稿"
                   value={newDeclaration}
                   onChange={(e) => setNewDeclaration(e.target.value)}
-                  placeholder="例: 今日は数学を3時間頑張る！"
-                  disabled={isPosting}
-                  className="text-base"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !isPosting) {
+                      handlePostDeclaration(e);
+                    }
+                  }}
+                  className="flex-1"
                 />
-                <Button 
-                  type="submit" 
-                  disabled={isPosting || !newDeclaration.trim()}
-                  className="w-full"
-                >
-                  {isPosting ? "投稿中..." : "📝 宣言する"}
+                <Button onClick={handlePostDeclaration} disabled={!newDeclaration.trim() || isPosting}>
+                  {isPosting ? '投稿中...' : '投稿'}
                 </Button>
-              </form>
-
-              {/* 宣言一覧 */}
+              </div>
               <div className="space-y-3">
-                {getDisplayDeclarations().length > 0 ? (
-                  getDisplayDeclarations().map((declaration) => (
-                    <div key={declaration.id} className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-medium text-blue-800">{declaration.userName}</span>
-                            <span className="text-xs text-blue-600">
-                              {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
-                            </span>
-                          </div>
-                          <p className="text-gray-800 leading-relaxed">{declaration.declaration}</p>
-                        </div>
+                {getDisplayDeclarations().map((declaration) => (
+                  <div key={declaration.id} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{declaration.userName}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {formatDistanceToNow(declaration.createdAt, { locale: ja })}前
+                        </Badge>
                       </div>
+                      <p className="text-sm text-gray-800">{declaration.declaration}</p>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500 font-medium mb-2">まだ学習宣言がありません</p>
-                    <p className="text-sm text-gray-400">
-                      最初の学習宣言を投稿してみましょう！
-                    </p>
                   </div>
+                ))}
+                {declarations.length > 15 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
+                    className="w-full"
+                  >
+                    {showAllDeclarations ? '宣言を閉じる' : '宣言をすべて表示'}
+                  </Button>
                 )}
-                
-                {/* もっと見るボタン */}
-                {!showAllDeclarations && filterRecentDeclarations(declarations).length > 15 && (
-                  <div className="text-center pt-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setShowAllDeclarations(true)}
-                      className="flex items-center gap-2"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                      もっと見る ({filterRecentDeclarations(declarations).length - 15}件)
-                    </Button>
-                  </div>
-                )}
-                
-                {/* 折りたたみボタン */}
-                {showAllDeclarations && (
-                  <div className="text-center pt-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setShowAllDeclarations(false)}
-                      className="flex items-center gap-2"
-                    >
-                      <ChevronUp className="w-4 h-4" />
-                      折りたたむ
-                    </Button>
-                  </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* タイムラインタブ */}
+        <TabsContent value="timeline" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                📅 タイムライン
+                <Badge variant="default" className="bg-yellow-500">
+                  {timelineData.length}件
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Select onValueChange={(value) => setSelectedSubject(value)} value={selectedSubject}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="科目を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjectOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={() => setShowAllTimeline(!showAllTimeline)} className="flex-shrink-0">
+                  {showAllTimeline ? 'タイムラインを閉じる' : 'タイムラインをすべて表示'}
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {getDisplayTimelineItems().map((item) => (
+                  <TimelineItemComponent key={item.id} item={item} />
+                ))}
+                {timelineData.length > 20 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllTimeline(!showAllTimeline)}
+                    className="w-full"
+                  >
+                    {showAllTimeline ? 'タイムラインを閉じる' : 'タイムラインをすべて表示'}
+                  </Button>
                 )}
               </div>
             </CardContent>
@@ -451,56 +606,42 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Trophy className="w-5 h-5" />
-                勉強時間ランキング
+                🏆 ランキング
+                <Badge variant="default" className="bg-red-500">
+                  {selectedSubject === '合計' ? mockRankingData.total.length : getCurrentRankingData().length}位
+                </Badge>
               </CardTitle>
-              <div className="flex items-center gap-4">
-                <p className="text-sm text-muted-foreground">
-                  メンバーの学習時間を確認できます
-                </p>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">科目:</label>
-                  <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subjectOptions.map((subject) => (
-                        <SelectItem key={subject} value={subject}>
-                          {subject === '合計' ? (
-                            <div className="flex items-center gap-1">
-                              <Trophy className="w-3 h-3" />
-                              <span>合計</span>
-                            </div>
-                          ) : (
-                            subject
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 mb-4">
-                {selectedSubject === '合計' ? (
-                  <>
-                    <Medal className="w-4 h-4 text-yellow-600" />
-                    <span className="font-medium">総合学習時間ランキング</span>
-                  </>
-                ) : (
-                  <>
-                    <Award className="w-4 h-4 text-blue-600" />
-                    <span className="font-medium">{selectedSubject} 学習時間ランキング</span>
-                  </>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Select onValueChange={(value) => setSelectedSubject(value)} value={selectedSubject}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="科目を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjectOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={() => setShowAllDeclarations(!showAllDeclarations)} className="flex-shrink-0">
+                  {showAllDeclarations ? 'ランキングを閉じる' : 'ランキングをすべて表示'}
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <RankingList data={getCurrentRankingData()} />
+                {selectedSubject !== '合計' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
+                    className="w-full"
+                  >
+                    {showAllDeclarations ? 'ランキングを閉じる' : 'ランキングをすべて表示'}
+                  </Button>
                 )}
               </div>
-              
-              <RankingList 
-                data={getCurrentRankingData()} 
-                showPercentage={selectedSubject === '合計'}
-              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -510,60 +651,47 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                この1週間の頑張り
+                📊 チャート
+                <Badge variant="default" className="bg-indigo-500">
+                  7日間
+                </Badge>
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                直近7日間の勉強時間推移を確認できます
-              </p>
             </CardHeader>
-            <CardContent>
-              <div className="h-80 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={mockChartData}
-                    margin={{
-                      top: 5,
-                      right: 30,
-                      left: 20,
-                      bottom: 5,
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fontSize: 12 }}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 12 }}
-                      label={{ value: '学習時間（分）', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip 
-                      formatter={formatTooltip}
-                      labelFormatter={(label) => {
-                        const data = mockChartData.find(d => d.date === label);
-                        return data ? data.dateLabel : label;
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #ccc',
-                        borderRadius: '6px'
-                      }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="minutes" 
-                      stroke="#3b82f6" 
-                      strokeWidth={3}
-                      dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
-                      activeDot={{ r: 7, fill: '#1d4ed8' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Select onValueChange={(value) => setSelectedSubject(value)} value={selectedSubject}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="科目を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjectOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={() => setShowAllDeclarations(!showAllDeclarations)} className="flex-shrink-0">
+                  {showAllDeclarations ? 'チャートを閉じる' : 'チャートをすべて表示'}
+                </Button>
               </div>
-              <div className="flex justify-between text-xs text-blue-600 mt-1">
-                <span>現在: {Math.round(mockChartData.reduce((sum, day) => sum + day.minutes, 0) / 60)}時間</span>
-                <span>目標: {user?.weeklyTarget || 56}時間</span>
+              <div className="space-y-3">
+                <LineChart width={600} height={300} data={mockChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="dateLabel" />
+                  <YAxis />
+                  <Tooltip formatter={formatTooltip} />
+                  <Line type="monotone" dataKey="minutes" stroke="#8884d8" />
+                </LineChart>
+                {selectedSubject !== '合計' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
+                    className="w-full"
+                  >
+                    {showAllDeclarations ? 'チャートを閉じる' : 'チャートをすべて表示'}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
