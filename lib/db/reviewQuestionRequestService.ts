@@ -244,6 +244,15 @@ import {
       }
     }
   
+    // 復習問題の更新
+    static async updateQuestion(questionId: string, updates: Partial<ReviewQuestion>): Promise<void> {
+      await updateDoc(doc(db, collections.reviewQuestions, questionId), {
+        ...updates,
+        updatedAt: Timestamp.now()
+      });
+    }
+
+
     // 統計情報取得
     static async getRequestStats() {
       try {

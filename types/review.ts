@@ -30,6 +30,7 @@ export interface ReviewQuestionRequest {
   details?: string; // 詳細
   memo?: string; // メモ
   status: 'pending' | 'in_progress' | 'completed' | 'rejected';
+  stage?: number; // ← これを追加
   createdAt: Date;
   updatedAt: Date;
   adminResponse?: string; // 管理者からの応答メッセージ

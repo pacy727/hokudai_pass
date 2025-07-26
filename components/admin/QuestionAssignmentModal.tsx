@@ -4,15 +4,13 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { ReviewQuestionRequestService } from '@/lib/db/reviewQuestionRequestService';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { ReviewQuestionRequest, ReviewStage, ReviewQuestion } from '@/types/review';
-import { X, Plus, CheckCircle, BookOpen, Save, Clock, User } from 'lucide-react';
+import { X, Plus, CheckCircle, BookOpen, Save, Clock, User, Edit } from 'lucide-react';
 
 interface QuestionAssignmentModalProps {
   isOpen: boolean;
@@ -32,18 +30,14 @@ export function QuestionAssignmentModal({
   
   const [selectedStage, setSelectedStage] = useState<ReviewStage>(1);
   const [questionData, setQuestionData] = useState({
-    title: '',
-    content: '',
-    type: 'text' as ReviewQuestion['type'],
-    options: ['', '', '', ''],
-    answer: '',
-    explanation: '',
-    difficulty: 'medium' as ReviewQuestion['difficulty'],
-    estimatedTime: 15
+    question: '',
+    answer: ''
   });
   const [assignedQuestions, setAssignedQuestions] = useState<ReviewQuestion[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<ReviewQuestion | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // 既存の割り当て済み問題を読み込み
   useEffect(() => {
@@ -55,41 +49,33 @@ export function QuestionAssignmentModal({
   const loadAssignedQuestions = async () => {
     setIsLoadingQuestions(true);
     try {
+      // Firestoreインデックスエラーを回避するため、シンプルクエリに変更
+      // 全ての復習問題を取得してクライアントサイドでフィルタリング
       const questions = await ReviewQuestionRequestService.getAssignedQuestions(request.id);
       setAssignedQuestions(questions);
       
-      // まだ割り当てられていない最初の段階を選択
-      const assignedStages = questions.map(q => q.targetStage);
-      const nextStage = [1, 2, 3, 4, 5].find(stage => !assignedStages.includes(stage as ReviewStage)) as ReviewStage || 1;
-      setSelectedStage(nextStage);
+      // まだ割り当てられていない最初の段階を選択（フォームクリア時のみ）
+      if (questionData.question === '' && questionData.answer === '') {
+        const assignedStages = questions.map(q => q.targetStage);
+        const nextStage = [1, 2, 3, 4, 5].find(stage => !assignedStages.includes(stage as ReviewStage)) as ReviewStage || 1;
+        setSelectedStage(nextStage);
+      }
     } catch (error) {
       console.error('Error loading assigned questions:', error);
+      // エラー時でも空配列で継続
+      setAssignedQuestions([]);
     } finally {
       setIsLoadingQuestions(false);
     }
   };
 
-  const handleInputChange = (field: string, value: any) => {
-    setQuestionData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleOptionChange = (index: number, value: string) => {
-    setQuestionData(prev => ({
-      ...prev,
-      options: prev.options.map((option, i) => i === index ? value : option)
-    }));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!questionData.title.trim() || !questionData.content.trim()) {
+    if (!questionData.question.trim() || !questionData.answer.trim()) {
       toast({
         title: "入力エラー",
-        description: "問題タイトルと内容は必須です",
+        description: "問題と解答は両方とも必須です",
         variant: "destructive"
       });
       return;
@@ -100,55 +86,23 @@ export function QuestionAssignmentModal({
     setIsSubmitting(true);
     
     try {
-      // undefinedフィールドを除去してクリーンなデータを作成
+      // シンプルな問題データ構造
       const cleanQuestionData: any = {
         reviewQuestionRequestId: request.id,
         teacherId: user.uid,
         teacherName: user.displayName,
         subject: request.subject,
         unit: request.unit,
-        title: questionData.title.trim(),
-        content: questionData.content.trim(),
-        type: questionData.type,
-        difficulty: questionData.difficulty,
-        estimatedTime: questionData.estimatedTime,
+        title: `${request.unit} - 第${selectedStage}回復習`,
+        content: questionData.question.trim(),
+        answer: questionData.answer.trim(),
         targetStage: selectedStage
       };
 
-      // 選択問題の場合のみoptionsを追加
-      if (questionData.type === 'multiple_choice') {
-        const validOptions = questionData.options.filter(opt => opt.trim());
-        if (validOptions.length >= 2) {
-          cleanQuestionData.options = validOptions;
-        }
-      }
-
-      // 正解が入力されている場合のみ追加
-      if (questionData.answer.trim()) {
-        cleanQuestionData.answer = questionData.answer.trim();
-      }
-
-      // 解説が入力されている場合のみ追加
-      if (questionData.explanation.trim()) {
-        cleanQuestionData.explanation = questionData.explanation.trim();
-      }
-
-      console.log('📝 Clean question data:', cleanQuestionData);
+      console.log('📝 Creating simplified question data:', cleanQuestionData);
 
       await ReviewQuestionRequestService.assignQuestionToRequest(request.id, selectedStage, cleanQuestionData);
       
-      // フォームをリセット
-      setQuestionData({
-        title: '',
-        content: '',
-        type: 'text',
-        options: ['', '', '', ''],
-        answer: '',
-        explanation: '',
-        difficulty: 'medium',
-        estimatedTime: 15
-      });
-
       // 割り当て済み問題を再読み込み
       await loadAssignedQuestions();
 
@@ -157,9 +111,13 @@ export function QuestionAssignmentModal({
         description: `第${selectedStage}回復習用の問題を割り当てました`
       });
 
-      // 全ての段階に問題が割り当てられた場合はリクエストを完了状態に更新
+      // 正確な完了判定：全ての段階（1-5）に問題が割り当てられているかチェック
       const updatedQuestions = await ReviewQuestionRequestService.getAssignedQuestions(request.id);
-      if (updatedQuestions.length >= 5) {
+      const allStagesAssigned = [1, 2, 3, 4, 5].every(stage => 
+        updatedQuestions.some(q => q.targetStage === stage)
+      );
+      
+      if (allStagesAssigned) {
         await ReviewQuestionRequestService.completeRequest(request.id);
         toast({
           title: "リクエスト完了",
@@ -180,27 +138,53 @@ export function QuestionAssignmentModal({
     }
   };
 
+  const handleUpdateQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!editingQuestion || !questionData.question.trim() || !questionData.answer.trim()) {
+      toast({
+        title: "入力エラー",
+        description: "問題と解答は両方とも必須です",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsUpdating(true);
+    
+    try {
+      // 問題の更新処理（実際のサービスメソッドは実装が必要）
+      await ReviewQuestionRequestService.updateQuestion(editingQuestion.id, {
+        content: questionData.question.trim(),
+        answer: questionData.answer.trim(),
+        updatedAt: new Date()
+      });
+      
+      // 割り当て済み問題を再読み込み
+      await loadAssignedQuestions();
+      
+      // 編集モードを終了
+      setEditingQuestion(null);
+      
+      toast({
+        title: "問題更新完了",
+        description: "問題内容を更新しました"
+      });
+
+    } catch (error) {
+      console.error('Error updating question:', error);
+      toast({
+        title: "エラー",
+        description: "問題の更新に失敗しました",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const isStageAssigned = (stage: ReviewStage) => {
     return assignedQuestions.some(q => q.targetStage === stage);
-  };
-
-  const getDifficultyLabel = (difficulty: ReviewQuestion['difficulty']) => {
-    switch (difficulty) {
-      case 'easy': return '簡単';
-      case 'medium': return '普通';
-      case 'hard': return '難しい';
-      default: return difficulty;
-    }
-  };
-
-  const getTypeLabel = (type: ReviewQuestion['type']) => {
-    switch (type) {
-      case 'multiple_choice': return '選択問題';
-      case 'text': return '記述問題';
-      case 'calculation': return '計算問題';
-      case 'essay': return '論述問題';
-      default: return type;
-    }
   };
 
   const getStageSchedule = (stage: ReviewStage) => {
@@ -292,38 +276,76 @@ export function QuestionAssignmentModal({
                     const isSelected = selectedStage === stage;
                     
                     return (
-                      <div
-                        key={stage}
-                        className={`p-3 rounded-lg border text-center cursor-pointer transition-all hover:shadow-sm ${
-                          assigned 
-                            ? 'bg-green-100 border-green-300 shadow-sm' 
-                            : isSelected
-                            ? 'bg-blue-100 border-blue-300 shadow-sm ring-2 ring-blue-200'
-                            : 'bg-gray-100 border-gray-300 hover:bg-gray-200'
-                        }`}
-                        onClick={() => !assigned && setSelectedStage(stage as ReviewStage)}
-                      >
-                        <div className="font-semibold text-sm">第{stage}回</div>
-                        <div className="text-xs text-gray-600 mt-1 mb-2">
-                          {getStageSchedule(stage as ReviewStage)}
-                        </div>
-                        <div className="text-xs">
-                          {assigned ? (
-                            <div className="flex items-center justify-center">
-                              <CheckCircle className="h-3 w-3 text-green-600 mr-1" />
-                              <span className="text-green-800 font-medium">完了</span>
-                            </div>
-                          ) : isSelected ? (
-                            <span className="text-blue-800 font-medium">選択中</span>
-                          ) : (
-                            <span className="text-gray-500">未作成</span>
-                          )}
-                        </div>
-                        {assignedQuestion && (
-                          <div className="text-xs text-gray-600 mt-2 p-1 bg-white rounded border truncate">
-                            {assignedQuestion.title}
+                      <div key={stage} className="space-y-2">
+                        {/* 段階ボタン（問題確認用） */}
+                        <Button
+                          variant={assigned ? "default" : isSelected ? "secondary" : "outline"}
+                          className={`w-full h-20 flex flex-col items-center justify-center text-center transition-all ${
+                            assigned 
+                              ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' 
+                              : isSelected
+                              ? 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200'
+                              : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
+                          }`}
+                          onClick={() => {
+                            setSelectedStage(stage as ReviewStage);
+                            if (assigned && assignedQuestion) {
+                              // 割り当て済みの場合は内容を表示
+                              setEditingQuestion(null);
+                              setQuestionData({
+                                question: assignedQuestion.content || '',
+                                answer: assignedQuestion.answer || ''
+                              });
+                            } else {
+                              // 未割り当ての場合は新規作成フォーム
+                              setEditingQuestion(null);
+                              setQuestionData({ question: '', answer: '' });
+                            }
+                          }}
+                        >
+                          <div className="font-semibold text-sm">第{stage}回</div>
+                          <div className={`text-xs mt-1 ${assigned ? 'text-green-100' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
+                            {getStageSchedule(stage as ReviewStage)}
                           </div>
-                        )}
+                          <div className={`text-xs mt-1 flex items-center justify-center ${assigned ? 'text-green-100' : isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
+                            {assigned ? (
+                              <>
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                <span>完了</span>
+                              </>
+                            ) : isSelected ? (
+                              <span>選択中</span>
+                            ) : (
+                              <span>未作成</span>
+                            )}
+                          </div>
+                        </Button>
+                        
+                        {/* アクションボタン */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (assigned && assignedQuestion) {
+                              // 編集モードで開く
+                              setEditingQuestion(assignedQuestion);
+                              setQuestionData({
+                                question: assignedQuestion.content || '',
+                                answer: assignedQuestion.answer || ''
+                              });
+                              setSelectedStage(stage as ReviewStage);
+                            } else {
+                              // 新規作成
+                              setEditingQuestion(null);
+                              setQuestionData({ question: '', answer: '' });
+                              setSelectedStage(stage as ReviewStage);
+                            }
+                          }}
+                          className="w-full text-xs"
+                        >
+                          {assigned ? '編集' : '作成'}
+                        </Button>
                       </div>
                     );
                   })}
@@ -346,219 +368,197 @@ export function QuestionAssignmentModal({
             </CardContent>
           </Card>
 
-          {/* 問題作成フォーム */}
-          {!isStageAssigned(selectedStage) && (
+          {/* 問題作成・編集・確認フォーム */}
+          {(selectedStage && (!isStageAssigned(selectedStage) || editingQuestion || (isStageAssigned(selectedStage) && !editingQuestion))) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
-                  <Plus className="h-5 w-5" />
-                  <span>第{selectedStage}回復習用問題の作成</span>
+                  {editingQuestion ? (
+                    <>
+                      <Edit className="h-5 w-5" />
+                      <span>第{selectedStage}回復習用問題の編集</span>
+                    </>
+                  ) : isStageAssigned(selectedStage) ? (
+                    <>
+                      <BookOpen className="h-5 w-5" />
+                      <span>第{selectedStage}回復習用問題の確認</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-5 w-5" />
+                      <span>第{selectedStage}回復習用問題の作成</span>
+                    </>
+                  )}
                   <Badge variant="outline" className="bg-blue-50">
                     {getStageSchedule(selectedStage)}
                   </Badge>
                 </CardTitle>
                 <p className="text-sm text-gray-600">
-                  学習から{getStageSchedule(selectedStage)}に復習する問題を作成します
+                  {editingQuestion 
+                    ? `学習から${getStageSchedule(selectedStage)}に復習する問題を編集します`
+                    : isStageAssigned(selectedStage)
+                    ? `学習から${getStageSchedule(selectedStage)}に復習する問題の内容です`
+                    : `学習から${getStageSchedule(selectedStage)}に復習する問題を作成します`
+                  }
                 </p>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* 問題タイトル */}
+                {!editingQuestion && isStageAssigned(selectedStage) ? (
+                  // 確認モード：読み取り専用表示
+                  <div className="space-y-6">
+                    {(() => {
+                      const assignedQuestion = assignedQuestions.find(q => q.targetStage === selectedStage);
+                      if (!assignedQuestion) return null;
+                      
+                      return (
+                        <>
+                          {/* 問題情報 */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-gray-50 p-3 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <User className="h-4 w-4 text-gray-500" />
+                              <strong>作成者:</strong>
+                              <span>{assignedQuestion.teacherName}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Clock className="h-4 w-4 text-gray-500" />
+                              <strong>作成日:</strong>
+                              <span>{assignedQuestion.createdAt.toLocaleDateString('ja-JP')}</span>
+                            </div>
+                          </div>
+
+                          {/* 問題内容（全文表示） */}
+                          <div className="space-y-4">
+                            <div>
+                              <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
+                                <BookOpen className="h-4 w-4 mr-2" />
+                                問題
+                              </h4>
+                              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                                  {assignedQuestion.content}
+                                </pre>
+                              </div>
+                            </div>
+
+                            {assignedQuestion.answer && (
+                              <div>
+                                <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  解答
+                                </h4>
+                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                  <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                                    {assignedQuestion.answer}
+                                  </pre>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 編集ボタン */}
+                          <div className="flex justify-center pt-4 border-t">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setEditingQuestion(assignedQuestion);
+                                setQuestionData({
+                                  question: assignedQuestion.content || '',
+                                  answer: assignedQuestion.answer || ''
+                                });
+                              }}
+                              className="flex items-center space-x-2"
+                            >
+                              <Edit className="h-4 w-4" />
+                              <span>内容を編集</span>
+                            </Button>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  // 編集・作成モード：フォーム表示
+                  <form onSubmit={editingQuestion ? handleUpdateQuestion : handleSubmit} className="space-y-6">
+                    {/* 問題 */}
                     <div className="space-y-2">
-                      <Label htmlFor="title">問題タイトル *</Label>
-                      <Input
-                        id="title"
-                        value={questionData.title}
-                        onChange={(e) => handleInputChange('title', e.target.value)}
-                        placeholder="例: 二次関数の最大値・最小値"
+                      <Label htmlFor="question">問題 *</Label>
+                      <Textarea
+                        id="question"
+                        value={questionData.question}
+                        onChange={(e) => setQuestionData(prev => ({ ...prev, question: e.target.value }))}
+                        placeholder="復習問題を入力してください&#10;&#10;例：&#10;次の関数の最大値・最小値を求めよ。&#10;f(x) = x² - 4x + 3 (0 ≤ x ≤ 3)"
+                        rows={8}
                         required
-                        className="h-12"
+                        className="text-sm"
                       />
                     </div>
 
-                    {/* 問題タイプ */}
+                    {/* 解答 */}
                     <div className="space-y-2">
-                      <Label htmlFor="type">問題タイプ</Label>
-                      <Select value={questionData.type} onValueChange={(value) => handleInputChange('type', value)}>
-                        <SelectTrigger className="h-12">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">記述問題</SelectItem>
-                          <SelectItem value="multiple_choice">選択問題</SelectItem>
-                          <SelectItem value="calculation">計算問題</SelectItem>
-                          <SelectItem value="essay">論述問題</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* 問題内容 */}
-                  <div className="space-y-2">
-                    <Label htmlFor="content">問題内容 *</Label>
-                    <Textarea
-                      id="content"
-                      value={questionData.content}
-                      onChange={(e) => handleInputChange('content', e.target.value)}
-                      placeholder="問題文を入力してください"
-                      rows={5}
-                      required
-                      className="text-sm"
-                    />
-                  </div>
-
-                  {/* 選択肢（選択問題の場合のみ） */}
-                  {questionData.type === 'multiple_choice' && (
-                    <div className="space-y-3">
-                      <Label>選択肢</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {questionData.options.map((option, index) => (
-                          <div key={index} className="flex items-center space-x-2">
-                            <span className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm font-medium">
-                              {String.fromCharCode(65 + index)}
-                            </span>
-                            <Input
-                              value={option}
-                              onChange={(e) => handleOptionChange(index, e.target.value)}
-                              placeholder={`選択肢${String.fromCharCode(65 + index)}`}
-                              className="h-10"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-sm text-gray-500">
-                        選択問題の場合は最低2つの選択肢を入力してください
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* 正解・参考答案 */}
-                    <div className="space-y-2">
-                      <Label htmlFor="answer">正解・参考答案</Label>
-                      <Input
+                      <Label htmlFor="answer">解答 *</Label>
+                      <Textarea
                         id="answer"
                         value={questionData.answer}
-                        onChange={(e) => handleInputChange('answer', e.target.value)}
-                        placeholder="正解や参考答案"
-                        className="h-10"
+                        onChange={(e) => setQuestionData(prev => ({ ...prev, answer: e.target.value }))}
+                        placeholder="模範解答または解説を入力してください&#10;&#10;例：&#10;f(x) = x² - 4x + 3 = (x - 2)² - 1&#10;0 ≤ x ≤ 3 における最小値は x = 2 のとき -1&#10;最大値は x = 3 のとき 0"
+                        rows={6}
+                        required
+                        className="text-sm"
                       />
                     </div>
 
-                    {/* 難易度 */}
-                    <div className="space-y-2">
-                      <Label htmlFor="difficulty">難易度</Label>
-                      <Select value={questionData.difficulty} onValueChange={(value) => handleInputChange('difficulty', value)}>
-                        <SelectTrigger className="h-10">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="easy">簡単</SelectItem>
-                          <SelectItem value="medium">普通</SelectItem>
-                          <SelectItem value="hard">難しい</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    {/* 送信ボタン */}
+                    <div className="flex justify-end space-x-3 pt-4 border-t">
+                      <Button type="button" variant="outline" onClick={() => {
+                        setEditingQuestion(null);
+                        if (isStageAssigned(selectedStage)) {
+                          // 割り当て済みの場合は確認モードに戻る
+                          const assignedQuestion = assignedQuestions.find(q => q.targetStage === selectedStage);
+                          setQuestionData({
+                            question: assignedQuestion?.content || '',
+                            answer: assignedQuestion?.answer || ''
+                          });
+                        } else {
+                          // 未割り当ての場合はクリア
+                          setQuestionData({ question: '', answer: '' });
+                        }
+                      }}>
+                        キャンセル
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={editingQuestion ? isUpdating : isSubmitting} 
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {editingQuestion ? (
+                          isUpdating ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              更新中...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-4 w-4 mr-2" />
+                              内容を更新
+                            </>
+                          )
+                        ) : (
+                          isSubmitting ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              割り当て中...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-4 w-4 mr-2" />
+                              第{selectedStage}回に割り当て
+                            </>
+                          )
+                        )}
+                      </Button>
                     </div>
-
-                    {/* 推定時間 */}
-                    <div className="space-y-2">
-                      <Label htmlFor="estimatedTime">推定時間（分）</Label>
-                      <Input
-                        id="estimatedTime"
-                        type="number"
-                        min="1"
-                        max="120"
-                        value={questionData.estimatedTime}
-                        onChange={(e) => handleInputChange('estimatedTime', parseInt(e.target.value) || 15)}
-                        className="h-10"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 解説 */}
-                  <div className="space-y-2">
-                    <Label htmlFor="explanation">解説（任意）</Label>
-                    <Textarea
-                      id="explanation"
-                      value={questionData.explanation}
-                      onChange={(e) => handleInputChange('explanation', e.target.value)}
-                      placeholder="解説や解答のポイント、学習者へのアドバイスを入力"
-                      rows={4}
-                      className="text-sm"
-                    />
-                  </div>
-
-                  {/* 送信ボタン */}
-                  <div className="flex justify-end space-x-3 pt-4 border-t">
-                    <Button type="button" variant="outline" onClick={onClose}>
-                      キャンセル
-                    </Button>
-                    <Button type="submit" disabled={isSubmitting} className="bg-green-600 hover:bg-green-700">
-                      {isSubmitting ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          割り当て中...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="h-4 w-4 mr-2" />
-                          第{selectedStage}回に割り当て
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* 既に割り当て済みの段階の場合 */}
-          {isStageAssigned(selectedStage) && (
-            <Card>
-              <CardContent className="text-center py-8">
-                <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-green-800 mb-2">
-                  第{selectedStage}回復習用問題は既に割り当て済みです
-                </h3>
-                <p className="text-green-600 mb-6">
-                  他の段階を選択して問題を作成してください
-                </p>
-                
-                {/* 割り当て済み問題の詳細表示 */}
-                {(() => {
-                  const assignedQuestion = assignedQuestions.find(q => q.targetStage === selectedStage);
-                  if (!assignedQuestion) return null;
-                  
-                  return (
-                    <div className="bg-green-50 p-6 rounded-lg border border-green-200 text-left max-w-md mx-auto">
-                      <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        割り当て済み問題
-                      </h4>
-                      <div className="space-y-2 text-sm text-green-700">
-                        <div><strong>タイトル:</strong> {assignedQuestion.title}</div>
-                        <div><strong>タイプ:</strong> {getTypeLabel(assignedQuestion.type)}</div>
-                        <div><strong>難易度:</strong> {getDifficultyLabel(assignedQuestion.difficulty)}</div>
-                        <div><strong>推定時間:</strong> {assignedQuestion.estimatedTime}分</div>
-                        <div><strong>作成者:</strong> {assignedQuestion.teacherName}</div>
-                        <div><strong>作成日:</strong> {assignedQuestion.createdAt.toLocaleDateString('ja-JP')}</div>
-                      </div>
-                      
-                      {assignedQuestion.content && (
-                        <div className="mt-3 p-3 bg-white rounded border">
-                          <div className="text-xs text-gray-600 mb-1">問題内容（抜粋）:</div>
-                          <div className="text-xs text-gray-800 line-clamp-3">
-                            {assignedQuestion.content.length > 100 
-                              ? `${assignedQuestion.content.substring(0, 100)}...` 
-                              : assignedQuestion.content
-                            }
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                  </form>
+                )}
               </CardContent>
             </Card>
           )}
