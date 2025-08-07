@@ -531,7 +531,19 @@ export default function ProfilePage() {
                               )}
                             </div>
                           </div>
-
+                            {/* フラグ表示 */}
+                            <div className="flex flex-col items-end space-y-1">
+                              {record.shouldReview && (
+                                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600">
+                                  復習
+                                </Badge>
+                              )}
+                              {record.requestReviewQuestions && (
+                                <Badge variant="outline" className="text-xs bg-green-50 text-green-600">
+                                  問題
+                                </Badge>
+                              )}
+                            </div>
                           <div className="flex items-center space-x-3 flex-shrink-0">
                             {/* 学習時間と日付 */}
                             <div className="text-xs text-gray-500 text-right">
@@ -589,19 +601,7 @@ export default function ProfilePage() {
                               </DropdownMenuContent>
                             </DropdownMenu>
 
-                            {/* フラグ表示 */}
-                            <div className="flex flex-col items-end space-y-1">
-                              {record.shouldReview && (
-                                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600">
-                                  復習
-                                </Badge>
-                              )}
-                              {record.requestReviewQuestions && (
-                                <Badge variant="outline" className="text-xs bg-green-50 text-green-600">
-                                  問題
-                                </Badge>
-                              )}
-                            </div>
+
                           </div>
                         </div>
                       ))}
@@ -728,7 +728,19 @@ export default function ProfilePage() {
                                         </div>
                                       )}
                                     </div>
-
+                                    {/* フラグ表示 */}
+                                    <div className="flex space-x-1">
+                                        {record.shouldReview && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 px-1 py-0">
+                                            復習
+                                          </Badge>
+                                        )}
+                                        {record.requestReviewQuestions && (
+                                          <Badge variant="outline" className="text-xs bg-green-50 text-green-600 px-1 py-0">
+                                            問題
+                                          </Badge>
+                                        )}
+                                      </div>
                                     {/* 右側：時間・日付・アクション */}
                                     <div className="flex items-center space-x-3 text-xs text-gray-500 ml-4">
                                       <div className="flex items-center gap-1">
@@ -784,19 +796,7 @@ export default function ProfilePage() {
                                         </DropdownMenuContent>
                                       </DropdownMenu>
 
-                                      {/* フラグ表示 */}
-                                      <div className="flex space-x-1">
-                                        {record.shouldReview && (
-                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 px-1 py-0">
-                                            復習
-                                          </Badge>
-                                        )}
-                                        {record.requestReviewQuestions && (
-                                          <Badge variant="outline" className="text-xs bg-green-50 text-green-600 px-1 py-0">
-                                            問題
-                                          </Badge>
-                                        )}
-                                      </div>
+                                      
                                     </div>
                                   </div>
                                 </div>
