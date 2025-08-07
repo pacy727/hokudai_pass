@@ -16,21 +16,33 @@ import {
   CheckCircle,
   XCircle,
   Target,
-  Award
+  Award,
+  Edit,
+  MoreVertical,
+  Trash2
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from '@/hooks/useAuth';
 import { ReviewItem, StudyLog, StudyProgress, TodayTask, ReviewStage } from '@/types/review';
-import { Subject } from '@/types/study';
+import { Subject, StudyRecord } from '@/types/study';
 import { ReviewService } from '@/lib/db/reviewService';
 import { StudyRecordService } from '@/lib/db/studyRecords';
 import { ReviewWorkflow } from '@/components/ReviewWorkflow';
 import { UnderstandingInputModal } from '@/components/UnderstandingInputModal';
 import { TodayTasks } from '@/components/TodayTasks';
+import { StudyRecordEditModal } from '@/components/StudyRecordEditModal';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function ProfilePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
+  const { toast } = useToast();
   const [currentTab, setCurrentTab] = useState('review');
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
@@ -39,11 +51,16 @@ export default function ProfilePage() {
   const [todayTasks, setTodayTasks] = useState<TodayTask[]>([]);
   const [studyLogs, setStudyLogs] = useState<StudyLog[]>([]);
   const [studyProgress, setStudyProgress] = useState<StudyProgress[]>([]);
+  const [studyRecords, setStudyRecords] = useState<StudyRecord[]>([]);
   
   // モーダル状態
   const [selectedReviewItem, setSelectedReviewItem] = useState<ReviewItem | null>(null);
   const [selectedStage, setSelectedStage] = useState<ReviewStage | null>(null);
   const [isUnderstandingModalOpen, setIsUnderstandingModalOpen] = useState(false);
+  
+  // 🆕 編集モーダル状態
+  const [selectedRecord, setSelectedRecord] = useState<StudyRecord | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -93,6 +110,20 @@ export default function ProfilePage() {
     return grouped;
   };
 
+  // 🆕 学習記録のグループ化
+  const groupStudyRecordsBySubject = (records: StudyRecord[]) => {
+    const grouped: Record<Subject, StudyRecord[]> = {} as Record<Subject, StudyRecord[]>;
+    
+    records.forEach(record => {
+      if (!grouped[record.subject]) {
+        grouped[record.subject] = [];
+      }
+      grouped[record.subject].push(record);
+    });
+    
+    return grouped;
+  };
+
   // 理解度の表示名
   const getUnderstandingLabel = (understanding: string) => {
     switch (understanding) {
@@ -120,6 +151,34 @@ export default function ProfilePage() {
     if (minutes < 60) return `${minutes}分`;
     const hours = Math.round((minutes / 60) * 10) / 10; // 小数点1桁で四捨五入
     return `${hours}時間`;
+  };
+
+  // 🆕 学習記録編集処理
+  const handleEditRecord = (record: StudyRecord) => {
+    setSelectedRecord(record);
+    setIsEditModalOpen(true);
+  };
+
+  // 🆕 学習記録更新処理
+  const handleUpdateRecord = (updatedRecord: StudyRecord) => {
+    setStudyRecords(prev => 
+      prev.map(record => record.id === updatedRecord.id ? updatedRecord : record)
+    );
+    
+    toast({
+      title: "更新完了",
+      description: "学習記録を更新しました"
+    });
+  };
+
+  // 🆕 学習記録削除処理
+  const handleDeleteRecord = (recordId: string) => {
+    setStudyRecords(prev => prev.filter(record => record.id !== recordId));
+    
+    toast({
+      title: "削除完了", 
+      description: "学習記録を削除しました"
+    });
   };
 
   useEffect(() => {
@@ -208,6 +267,7 @@ export default function ProfilePage() {
       setTodayTasks(todayTasksData);
       setStudyLogs(generatedStudyLogs);
       setStudyProgress(progress);
+      setStudyRecords(studyRecords);
 
     } catch (error) {
       console.error('❌ Error loading data:', error);
@@ -247,6 +307,7 @@ export default function ProfilePage() {
   }
 
   const groupedStudyLogs = groupStudyLogsBySubject(studyLogs);
+  const groupedStudyRecords = groupStudyRecordsBySubject(studyRecords);
   const availableSubjects = getAvailableSubjects();
 
   return (
@@ -387,7 +448,7 @@ export default function ProfilePage() {
               </Card>
             </TabsContent>
 
-            {/* タイムライン表示タブ */}
+            {/* 🆕 タイムライン表示タブ（編集・削除機能付き） */}
             <TabsContent value="timeline" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -395,11 +456,11 @@ export default function ProfilePage() {
                     <div>
                       <CardTitle className="flex items-center space-x-2">
                         <Clock className="h-5 w-5" />
-                        <span>タイムライン</span>
-                        <Badge variant="outline">{studyLogs.length}件</Badge>
+                        <span>学習記録タイムライン</span>
+                        <Badge variant="outline">{studyRecords.length}件</Badge>
                       </CardTitle>
                       <p className="text-sm text-gray-600 mt-1">
-                        復習リスト登録された学習記録の時系列表示
+                        全ての学習記録の時系列表示（編集・削除可能）
                       </p>
                     </div>
                     
@@ -412,8 +473,8 @@ export default function ProfilePage() {
                             {(() => {
                               const sevenDaysAgo = new Date();
                               sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                              const recentLogs = studyLogs.filter(log => log.studyDate >= sevenDaysAgo);
-                              const totalMinutes = recentLogs.reduce((sum, log) => sum + log.duration, 0);
+                              const recentRecords = studyRecords.filter(record => new Date(record.studyDate) >= sevenDaysAgo);
+                              const totalMinutes = recentRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
                               return formatTime(totalMinutes);
                             })()}
                           </span>
@@ -422,7 +483,7 @@ export default function ProfilePage() {
                           <span className="text-xs text-gray-500">累計学習時間</span>
                           <span className="font-bold text-green-600">
                             {(() => {
-                              const totalMinutes = studyLogs.reduce((sum, log) => sum + log.duration, 0);
+                              const totalMinutes = studyRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
                               return formatTime(totalMinutes);
                             })()}
                           </span>
@@ -432,58 +493,122 @@ export default function ProfilePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {studyLogs.length === 0 ? (
+                  {studyRecords.length === 0 ? (
                     <div className="text-center py-8">
                       <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">学習ログがありません</p>
+                      <p className="text-gray-500">学習記録がありません</p>
                       <p className="text-sm text-gray-400">
-                        学習記録で「復習リスト登録」をチェックすると、ここに表示されます
+                        学習記録を作成すると、ここに表示されます
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {studyLogs.map((log) => (
+                      {studyRecords.map((record) => (
                         <div
-                          key={log.id}
-                          className="flex items-center justify-between p-3 bg-white border rounded-lg hover:shadow-sm transition-shadow"
+                          key={record.id}
+                          className="flex items-center justify-between p-3 bg-white border rounded-lg hover:shadow-sm transition-shadow group"
                         >
                           <div className="flex items-center space-x-3 flex-1 min-w-0">
                             <Badge 
                               variant="outline" 
                               className="flex-shrink-0 text-xs"
                             >
-                              {getSubjectDisplayName(log.subject)}
+                              {getSubjectDisplayName(record.subject)}
                             </Badge>
                             <div className="flex-1 min-w-0">
                               <div className="font-medium text-sm truncate">
-                                {log.unit}
+                                {record.content}
                               </div>
-                              {log.content !== log.unit && (
+                              {record.details && (
                                 <div className="text-xs text-gray-500 truncate">
-                                  {log.content}
+                                  {record.details}
+                                </div>
+                              )}
+                              {record.memo && (
+                                <div className="text-xs text-blue-500 truncate mt-1">
+                                  💭 {record.memo}
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex items-center space-x-3 flex-shrink-0 text-xs text-gray-500">
-                            <div className="flex items-center space-x-1">
-                              <Clock className="h-3 w-3" />
-                              <span>{formatTime(log.duration)}</span>
+                          <div className="flex items-center space-x-3 flex-shrink-0">
+                            {/* 学習時間と日付 */}
+                            <div className="text-xs text-gray-500 text-right">
+                              <div className="flex items-center space-x-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{formatTime(record.studyMinutes || 0)}</span>
+                              </div>
+                              <div className="text-gray-400 mt-0.5">
+                                {new Date(record.studyDate).toLocaleDateString('ja-JP', { 
+                                  month: 'short', 
+                                  day: 'numeric' 
+                                })}
+                              </div>
                             </div>
-                            <span className="text-gray-400">
-                              {log.studyDate.toLocaleDateString('ja-JP', { 
-                                month: 'short', 
-                                day: 'numeric' 
-                              })}
-                            </span>
+
+                            {/* 🆕 編集・削除メニュー */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => handleEditRecord(record)}
+                                  className="flex items-center space-x-2 cursor-pointer"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                  <span>編集</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={async () => {
+                                    if (confirm('この学習記録を削除しますか？')) {
+                                      try {
+                                        await StudyRecordService.deleteRecord(record.id);
+                                        handleDeleteRecord(record.id);
+                                      } catch (error) {
+                                        toast({
+                                          title: "エラー",
+                                          description: "削除に失敗しました",
+                                          variant: "destructive"
+                                        });
+                                      }
+                                    }
+                                  }}
+                                  className="flex items-center space-x-2 cursor-pointer text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  <span>削除</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            {/* フラグ表示 */}
+                            <div className="flex flex-col items-end space-y-1">
+                              {record.shouldReview && (
+                                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600">
+                                  復習
+                                </Badge>
+                              )}
+                              {record.requestReviewQuestions && (
+                                <Badge variant="outline" className="text-xs bg-green-50 text-green-600">
+                                  問題
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
                       
                       <div className="text-center pt-2">
                         <p className="text-xs text-gray-500">
-                          全{studyLogs.length}件の学習ログ
+                          全{studyRecords.length}件の学習記録
                         </p>
                       </div>
                     </div>
@@ -492,15 +617,15 @@ export default function ProfilePage() {
               </Card>
             </TabsContent>
 
-            {/* 学習ログタブ（教科別表示） */}
+            {/* 🆕 学習ログタブ（教科別表示・編集機能付き） */}
             <TabsContent value="subjects" className="space-y-6">
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <BookOpen className="h-5 w-5" />
-                      <span className="text-lg font-semibold">学習ログ</span>
-                      <Badge variant="outline">{studyLogs.length}件</Badge>
+                      <span className="text-lg font-semibold">教科別学習記録</span>
+                      <Badge variant="outline">{studyRecords.length}件</Badge>
                     </div>
                     
                     {/* 現在選択中の科目のサマリー */}
@@ -511,16 +636,16 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <p className="text-sm text-gray-600 mt-2">
-                    復習リスト登録された学習記録の教科別表示
+                    全ての学習記録の教科別表示（編集・削除可能）
                   </p>
                 </CardHeader>
                 <CardContent>
-                  {studyLogs.length === 0 ? (
+                  {studyRecords.length === 0 ? (
                     <div className="text-center py-8">
                       <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">学習ログがありません</p>
+                      <p className="text-gray-500">学習記録がありません</p>
                       <p className="text-sm text-gray-400">
-                        学習記録で「復習リスト登録」をチェックすると、ここに表示されます
+                        学習記録を作成すると、ここに表示されます
                       </p>
                     </div>
                   ) : (
@@ -528,7 +653,7 @@ export default function ProfilePage() {
                       {/* 科目別小タブ */}
                       <div className="grid w-full gap-1 mb-4 p-1 bg-gray-100 rounded-lg" style={{gridTemplateColumns: `repeat(${availableSubjects.length}, 1fr)`}}>
                         {availableSubjects.map((subject) => {
-                          const subjectLogs = groupedStudyLogs[subject] || [];
+                          const subjectRecords = groupedStudyRecords[subject] || [];
                           const isActive = selectedSubject === subject;
                           return (
                             <button
@@ -536,10 +661,10 @@ export default function ProfilePage() {
                               onClick={() => {
                                 setSelectedSubject(subject);
                                 console.log('Subject changed to:', subject);
-                                console.log('Available data for subject:', groupedStudyLogs[subject]);
+                                console.log('Available data for subject:', groupedStudyRecords[subject]);
                                 
                                 // タブ変更時にサマリーを更新
-                                const totalTime = subjectLogs.reduce((sum, log) => sum + log.duration, 0);
+                                const totalTime = subjectRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
                                 
                                 setTimeout(() => {
                                   const subjectEl = document.getElementById('current-subject');
@@ -547,7 +672,7 @@ export default function ProfilePage() {
                                   const timeEl = document.getElementById('current-time');
                                   
                                   if (subjectEl) subjectEl.textContent = getSubjectDisplayName(subject);
-                                  if (countEl) countEl.textContent = subjectLogs.length.toString();
+                                  if (countEl) countEl.textContent = subjectRecords.length.toString();
                                   if (timeEl) timeEl.textContent = formatTime(totalTime);
                                 }, 50);
                               }}
@@ -559,69 +684,121 @@ export default function ProfilePage() {
                             >
                               <div className="flex flex-col items-center gap-0.5">
                                 <span className="font-medium">{getSubjectDisplayName(subject)}</span>
-                                <span className="text-xs opacity-75">{subjectLogs.length}件</span>
+                                <span className="text-xs opacity-75">{subjectRecords.length}件</span>
                               </div>
                             </button>
                           );
                         })}
                       </div>
 
-                      {/* 選択された科目のログ表示 */}
+                      {/* 選択された科目の記録表示 */}
                       <div className="mt-4">
                         {selectedSubject && (() => {
-                          const subjectLogs = groupedStudyLogs[selectedSubject] || [];
+                          const subjectRecords = groupedStudyRecords[selectedSubject] || [];
                           
-                          return subjectLogs.length === 0 ? (
+                          return subjectRecords.length === 0 ? (
                             <div className="text-center py-8">
                               <BookOpen className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                               <p className="text-gray-500 text-sm">
-                                {getSubjectDisplayName(selectedSubject)}の学習ログがありません
+                                {getSubjectDisplayName(selectedSubject)}の学習記録がありません
                               </p>
                               <p className="text-xs text-gray-400">
-                                学習記録で「復習リスト登録」をチェックすると表示されます
+                                学習記録を作成すると表示されます
                               </p>
                             </div>
                           ) : (
                             <div className="space-y-1 max-h-96 overflow-y-auto">
-                              {subjectLogs.map((log) => (
+                              {subjectRecords.map((record) => (
                                 <div
-                                  key={log.id}
-                                  className="bg-white border rounded p-2 hover:bg-gray-50 transition-colors"
+                                  key={record.id}
+                                  className="bg-white border rounded p-2 hover:bg-gray-50 transition-colors group"
                                 >
                                   <div className="flex items-center justify-between">
                                     {/* 左側：学習内容 */}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-sm truncate">
-                                        {log.unit}
+                                    <div className="flex-1 min-w-0 mr-3">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="font-medium text-sm truncate">{record.content}</span>
+                                        <span className="text-xs text-gray-500 truncate">
+                                          {record.details}
+                                        </span>
                                       </div>
-                                      {log.content !== log.unit && (
-                                        <div className="text-xs text-gray-500 truncate">
-                                          {log.content}
+                                      {record.memo && (
+                                        <div className="text-xs text-blue-500 truncate mt-1 bg-blue-50 rounded px-2 py-1">
+                                          💭 {record.memo}
                                         </div>
                                       )}
                                     </div>
 
-                                    {/* 右側：時間と日付 */}
+                                    {/* 右側：時間・日付・アクション */}
                                     <div className="flex items-center space-x-3 text-xs text-gray-500 ml-4">
                                       <div className="flex items-center gap-1">
                                         <Clock className="h-3 w-3" />
-                                        <span>{formatTime(log.duration)}</span>
+                                        <span>{formatTime(record.studyMinutes || 0)}</span>
                                       </div>
                                       <span className="text-gray-400">
-                                        {log.studyDate.toLocaleDateString('ja-JP', { 
+                                        {new Date(record.studyDate).toLocaleDateString('ja-JP', { 
                                           month: 'short', 
                                           day: 'numeric' 
                                         })}
                                       </span>
+
+                                      {/* 🆕 編集・削除メニュー */}
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                                          >
+                                            <MoreVertical className="h-3 w-3" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={() => handleEditRecord(record)}
+                                            className="flex items-center space-x-2 cursor-pointer text-xs"
+                                          >
+                                            <Edit className="h-3 w-3" />
+                                            <span>編集</span>
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={async () => {
+                                              if (confirm('この学習記録を削除しますか？')) {
+                                                try {
+                                                  await StudyRecordService.deleteRecord(record.id);
+                                                  handleDeleteRecord(record.id);
+                                                } catch (error) {
+                                                  toast({
+                                                    title: "エラー",
+                                                    description: "削除に失敗しました",
+                                                    variant: "destructive"
+                                                  });
+                                                }
+                                              }
+                                            }}
+                                            className="flex items-center space-x-2 cursor-pointer text-red-600 hover:text-red-700 text-xs"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                            <span>削除</span>
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+
+                                      {/* フラグ表示 */}
+                                      <div className="flex space-x-1">
+                                        {record.shouldReview && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 px-1 py-0">
+                                            復習
+                                          </Badge>
+                                        )}
+                                        {record.requestReviewQuestions && (
+                                          <Badge variant="outline" className="text-xs bg-green-50 text-green-600 px-1 py-0">
+                                            問題
+                                          </Badge>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                  
-                                  {/* メモがある場合のみ表示 */}
-                                  {log.notes && (
-                                    <div className="text-xs text-gray-500 mt-1 bg-gray-50 rounded px-2 py-1">
-                                      💭 {log.notes}
-                                    </div>
-                                  )}
                                 </div>
                               ))}
                             </div>
@@ -649,6 +826,20 @@ export default function ProfilePage() {
             setSelectedStage(null);
           }}
           onSubmit={handleUnderstandingSubmit}
+        />
+      )}
+
+      {/* 🆕 学習記録編集モーダル */}
+      {selectedRecord && (
+        <StudyRecordEditModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setSelectedRecord(null);
+          }}
+          record={selectedRecord}
+          onUpdate={handleUpdateRecord}
+          onDelete={handleDeleteRecord}
         />
       )}
     </div>

@@ -4,7 +4,10 @@ import {
   getDocs,
   query,
   where,
-  Timestamp
+  Timestamp,
+  doc,
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, collections } from '../firebase';
 import { StudyRecord, Subject, ChartData, StudyStats } from '@/types/study';
@@ -69,6 +72,104 @@ export class StudyRecordService {
     }
     
     return docRef.id;
+  }
+
+  // 🆕 記録更新
+  static async updateRecord(recordId: string, updates: Partial<StudyRecord>): Promise<void> {
+    try {
+      console.log('🔄 Updating study record:', recordId, updates);
+
+      // undefined除去処理
+      const cleanUpdates: any = {
+        updatedAt: Timestamp.now()
+      };
+
+      // 定義されている値のみ追加
+      if (updates.studyDate !== undefined) cleanUpdates.studyDate = updates.studyDate;
+      if (updates.subject !== undefined) cleanUpdates.subject = updates.subject;
+      if (updates.studyMinutes !== undefined) cleanUpdates.studyMinutes = updates.studyMinutes;
+      if (updates.startTime !== undefined) cleanUpdates.startTime = updates.startTime;
+      if (updates.endTime !== undefined) cleanUpdates.endTime = updates.endTime;
+      if (updates.content !== undefined) cleanUpdates.content = updates.content.trim();
+      
+      // 空文字列の場合は削除、値がある場合は更新
+      if (updates.details !== undefined) {
+        if (updates.details.trim()) {
+          cleanUpdates.details = updates.details.trim();
+        } else {
+          cleanUpdates.details = null; // Firestoreでフィールドを削除
+        }
+      }
+      
+      if (updates.memo !== undefined) {
+        if (updates.memo.trim()) {
+          cleanUpdates.memo = updates.memo.trim();
+        } else {
+          cleanUpdates.memo = null; // Firestoreでフィールドを削除
+        }
+      }
+
+      if (updates.shouldReview !== undefined) cleanUpdates.shouldReview = updates.shouldReview;
+      if (updates.requestReviewQuestions !== undefined) cleanUpdates.requestReviewQuestions = updates.requestReviewQuestions;
+
+      const docRef = doc(db, collections.studyRecords, recordId);
+      await updateDoc(docRef, cleanUpdates);
+      
+      console.log('✅ Study record updated successfully');
+    } catch (error) {
+      console.error('❌ Error updating study record:', error);
+      throw error;
+    }
+  }
+
+  // 🆕 記録削除
+  static async deleteRecord(recordId: string): Promise<void> {
+    try {
+      console.log('🗑️ Deleting study record:', recordId);
+      
+      const docRef = doc(db, collections.studyRecords, recordId);
+      await deleteDoc(docRef);
+      
+      console.log('✅ Study record deleted successfully');
+    } catch (error) {
+      console.error('❌ Error deleting study record:', error);
+      throw error;
+    }
+  }
+
+  // 🆕 単一記録取得
+  static async getRecordById(recordId: string): Promise<StudyRecord | null> {
+    try {
+      console.log('🔍 Fetching record by ID:', recordId);
+      
+      const q = query(
+        collection(db, collections.studyRecords),
+        where('__name__', '==', recordId)
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        console.log('⚠️ Record not found');
+        return null;
+      }
+      
+      const doc = snapshot.docs[0];
+      const data = doc.data();
+      
+      const record = {
+        id: doc.id,
+        ...data,
+        studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0),
+        createdAt: data.createdAt?.toDate() || new Date()
+      } as StudyRecord;
+      
+      console.log('✅ Record found:', record);
+      return record;
+    } catch (error) {
+      console.error('❌ Error fetching record by ID:', error);
+      return null;
+    }
   }
 
   // ユーザーの記録取得（シンプルクエリ）
