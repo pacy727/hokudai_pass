@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRealtimeStudyStatus, useDeclarations } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
 import { StudyRecordService } from '@/lib/db/studyRecords';
+import { ReviewStatsService } from '@/lib/db/reviewStatsService';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db, collections } from '@/lib/firebase';
@@ -22,8 +23,13 @@ import { StudyChart } from '@/components/dashboard/StudyChart';
 interface UserStats {
   userId: string;
   userName: string;
+  grade?: string; // 学年情報を追加
   totalHours: number;
   subjectHours: Record<string, number>;
+  reviewStats?: {
+    totalReviewsCompleted: number;
+    averageUnderstanding: number;
+  };
 }
 
 // タイムラインアイテムの型定義
@@ -55,6 +61,7 @@ export default function DashboardPage() {
   const [timelineData, setTimelineData] = useState<TimelineItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [userNamesMap, setUserNamesMap] = useState<Map<string, string>>(new Map());
+  const [userGradesMap, setUserGradesMap] = useState<Map<string, string>>(new Map()); // 学年マップを追加
 
   // useEffect でリダイレクト処理
   useEffect(() => {
@@ -106,13 +113,14 @@ export default function DashboardPage() {
       console.log('📚 All users study records loaded:', records.length);
       setAllStudyRecords(records);
       
-      // ユーザー名を取得
+      // ユーザー名と学年を取得
       const userIds = Array.from(new Set(records.map(r => r.userId)));
-      const userNames = await loadUserNames(userIds);
+      const { userNames, userGrades } = await loadUserNamesAndGrades(userIds);
       setUserNamesMap(userNames);
+      setUserGradesMap(userGrades);
       
-      // 全ユーザーの統計計算
-      calculateAllUsersStats(records, userNames);
+      // 全ユーザーの統計計算（復習統計を含む）
+      await calculateAllUsersStats(records, userNames, userGrades);
       
       // タイムラインデータ生成（全ユーザーの学習記録のみ）
       generateTimelineData(records, userNames);
@@ -127,11 +135,15 @@ export default function DashboardPage() {
     }
   };
 
-  // ユーザー名を取得
-  const loadUserNames = async (userIds: string[]): Promise<Map<string, string>> => {
+  // ユーザー名と学年を取得
+  const loadUserNamesAndGrades = async (userIds: string[]): Promise<{
+    userNames: Map<string, string>;
+    userGrades: Map<string, string>;
+  }> => {
     const userNames = new Map<string, string>();
+    const userGrades = new Map<string, string>();
     
-    console.log('👥 Loading user names for', userIds.length, 'users');
+    console.log('👥 Loading user names and grades for', userIds.length, 'users');
     
     // バッチでユーザー情報を取得（Firestoreの制限を考慮）
     const batchSize = 10;
@@ -147,41 +159,53 @@ export default function DashboardPage() {
           if (batch.includes(doc.id)) {
             const userData = doc.data();
             userNames.set(doc.id, userData.displayName || 'ユーザー');
+            userGrades.set(doc.id, userData.grade || 'その他'); // 学年情報を追加
           }
         });
         
       } catch (error) {
-        console.warn('Failed to load user names for batch:', batch, error);
+        console.warn('Failed to load user data for batch:', batch, error);
         // エラーの場合はデフォルト名を設定
         batch.forEach(userId => {
           if (!userNames.has(userId)) {
             userNames.set(userId, userId === user?.uid ? user.displayName : 'ユーザー');
+            userGrades.set(userId, 'その他');
           }
         });
       }
     }
     
-    console.log('✅ User names loaded:', userNames.size);
-    return userNames;
+    console.log('✅ User data loaded:', userNames.size, 'names,', userGrades.size, 'grades');
+    return { userNames, userGrades };
   };
 
-  // 全ユーザーの統計計算
-  const calculateAllUsersStats = (records: StudyRecord[], userNames: Map<string, string>) => {
-    console.log('📈 Calculating all users stats...');
+  // 全ユーザーの統計計算（復習統計を含む）
+  const calculateAllUsersStats = async (
+    records: StudyRecord[], 
+    userNames: Map<string, string>,
+    userGrades: Map<string, string>
+  ) => {
+    console.log('📈 Calculating all users stats with review data...');
     
     const userStatsMap = new Map<string, UserStats>();
     
-    // 各ユーザーの統計を計算
+    // 各ユーザーの基本統計を計算
     records.forEach(record => {
       const userId = record.userId;
       const userName = userNames.get(userId) || 'ユーザー';
+      const userGrade = userGrades.get(userId) || 'その他';
       
       if (!userStatsMap.has(userId)) {
         userStatsMap.set(userId, {
           userId,
           userName,
+          grade: userGrade, // 学年情報を追加
           totalHours: 0,
-          subjectHours: {}
+          subjectHours: {},
+          reviewStats: {
+            totalReviewsCompleted: 0,
+            averageUnderstanding: 0
+          }
         });
       }
       
@@ -190,29 +214,45 @@ export default function DashboardPage() {
       stats.totalHours += hours;
       stats.subjectHours[record.subject] = (stats.subjectHours[record.subject] || 0) + hours;
     });
-    
+
+    // 復習統計を並行して取得
     const userStatsList = Array.from(userStatsMap.values());
-    console.log('📊 User stats calculated for', userStatsList.length, 'users');
+    const reviewStatsPromises = userStatsList.map(async (userStats) => {
+      try {
+        const reviewStats = await ReviewStatsService.calculateUserReviewStats(userStats.userId);
+        userStats.reviewStats = {
+          totalReviewsCompleted: reviewStats.totalReviewsCompleted,
+          averageUnderstanding: reviewStats.averageUnderstanding
+        };
+        return userStats;
+      } catch (error) {
+        console.warn(`Failed to load review stats for user ${userStats.userId}:`, error);
+        return userStats; // エラー時もデフォルト値で継続
+      }
+    });
+
+    const completeUserStats = await Promise.all(reviewStatsPromises);
+    console.log('📊 User stats with review data calculated for', completeUserStats.length, 'users');
     
     // ランキングデータ生成
     const rankingData: Record<string, UserStats[]> = {};
     
     // 総合ランキング
-    rankingData['合計'] = userStatsList
+    rankingData['合計'] = completeUserStats
       .sort((a, b) => b.totalHours - a.totalHours)
       .slice(0, 20); // トップ20
     
     // 科目別ランキング
     const subjects = ['英語', '数学', '国語', '情報', '理科', '理科1', '理科2', '社会', '社会1', '社会2'];
     subjects.forEach(subject => {
-      rankingData[subject] = userStatsList
+      rankingData[subject] = completeUserStats
         .filter(stats => stats.subjectHours[subject] > 0)
         .sort((a, b) => (b.subjectHours[subject] || 0) - (a.subjectHours[subject] || 0))
         .slice(0, 20); // トップ20
     });
     
     setUserRankingData(rankingData);
-    console.log('🏆 Ranking data generated');
+    console.log('🏆 Ranking data with grades generated');
   };
 
   // タイムラインデータ生成（全ユーザーの学習記録のみ）
@@ -364,7 +404,7 @@ export default function DashboardPage() {
           />
         </TabsContent>
 
-        {/* ランキングタブ（全ユーザー） */}
+        {/* ランキングタブ（全ユーザー・学年フィルタ付き） */}
         <TabsContent value="ranking" className="space-y-4 mt-6">
           <UserRanking 
             userRankingData={userRankingData}
@@ -372,12 +412,13 @@ export default function DashboardPage() {
           />
         </TabsContent>
 
-        {/* チャートタブ（ユーザー別） */}
+        {/* チャートタブ（学年フィルタ付き） */}
         <TabsContent value="chart" className="space-y-4 mt-6">
           <StudyChart 
             chartData={chartData}
             allStudyRecords={allStudyRecords}
             userNamesMap={userNamesMap}
+            userGradesMap={userGradesMap} // 学年マップを渡す
           />
         </TabsContent>
       </Tabs>

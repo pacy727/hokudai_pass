@@ -12,10 +12,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { UserSettings } from '@/types/auth';
 import { Subject } from '@/types/study';
-import { Settings, User, Target, BookOpen, Save, ArrowLeft, Plus, Minus, LogOut } from 'lucide-react';
+import { Settings, User, Target, BookOpen, Save, ArrowLeft, Plus, Minus, LogOut, GraduationCap } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   
   const [settings, setSettings] = useState<UserSettings>({
     displayName: '',
+    grade: 'その他',
     course: 'science',
     weeklyTarget: 56,
     customSubjects: {},
@@ -40,6 +42,7 @@ export default function SettingsPage() {
     if (user) {
       setSettings({
         displayName: user.displayName,
+        grade: user.grade || 'その他',
         course: user.course || 'science',
         weeklyTarget: user.weeklyTarget || 56,
         customSubjects: user.customSubjects || {},
@@ -56,7 +59,6 @@ export default function SettingsPage() {
           title: "ログアウト完了",
           description: "お疲れ様でした！"
         });
-        // ログアウト後、自動的にログインページにリダイレクト
         router.push('/login');
       } catch (error) {
         console.error('Logout error:', error);
@@ -87,6 +89,7 @@ export default function SettingsPage() {
     try {
       const updateData = {
         displayName: settings.displayName.trim(),
+        grade: settings.grade,
         course: settings.course,
         weeklyTarget: settings.weeklyTarget,
         customSubjects: settings.customSubjects,
@@ -173,6 +176,16 @@ export default function SettingsPage() {
     return customName || subject;
   };
 
+  const getGradeDisplayName = (grade: string) => {
+    const gradeMap = {
+      '1学年': '1学年',
+      '2学年': '2学年', 
+      '3学年': '3学年',
+      'その他': 'その他'
+    };
+    return gradeMap[grade as keyof typeof gradeMap] || grade;
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -226,6 +239,33 @@ export default function SettingsPage() {
                   className="h-12"
                   required
                 />
+              </div>
+
+              {/* 学年選択 */}
+              <div className="space-y-2">
+                <Label htmlFor="grade" className="flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4" />
+                  学年
+                </Label>
+                <Select 
+                  value={settings.grade} 
+                  onValueChange={(value) => setSettings(prev => ({ ...prev, grade: value as any }))}
+                >
+                  <SelectTrigger className="h-12">
+                    <SelectValue placeholder="学年を選択">
+                      {getGradeDisplayName(settings.grade)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1学年">1学年</SelectItem>
+                    <SelectItem value="2学年">2学年</SelectItem>
+                    <SelectItem value="3学年">3学年</SelectItem>
+                    <SelectItem value="その他">その他</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  学年設定により、ランキングやチャートで同学年との比較ができます
+                </p>
               </div>
             </div>
 
@@ -508,6 +548,7 @@ export default function SettingsPage() {
           <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <h4 className="font-semibold text-blue-800 mb-2">💡 設定のヒント</h4>
             <ul className="text-sm text-blue-700 space-y-1">
+              <li>• 学年設定により、同学年とのランキング比較ができます</li>
               <li>• 文系は社会2科目+理科1科目が基本、理系は理科2科目+社会1科目が基本</li>
               <li>• 必要に応じて追加科目を有効にできます</li>
               <li>• 科目名は入試で使用する正式名称に変更推奨</li>
@@ -520,8 +561,19 @@ export default function SettingsPage() {
             <h4 className="font-semibold text-gray-800 mb-2">👤 アカウント情報</h4>
             <div className="text-sm text-gray-600 space-y-1">
               <div><strong>メールアドレス:</strong> {user.email}</div>
+              <div><strong>学年:</strong> {getGradeDisplayName(user.grade || 'その他')}</div>
+              <div><strong>コース:</strong> {user.course === 'liberal' ? '文系' : '理系'}</div>
               <div><strong>ユーザーID:</strong> {user.uid.slice(0, 8)}...</div>
               <div><strong>登録日:</strong> {user.createdAt.toLocaleDateString('ja-JP')}</div>
+              {user.reviewStats && (
+                <div className="mt-2 pt-2 border-t">
+                  <strong>復習統計:</strong>
+                  <div className="ml-2 text-xs">
+                    <div>完了復習数: {user.reviewStats.totalReviewsCompleted}回</div>
+                    <div>平均理解度: {user.reviewStats.averageUnderstanding.toFixed(1)}点</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

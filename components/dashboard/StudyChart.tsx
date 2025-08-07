@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { GraduationCap, BarChart3 } from 'lucide-react';
 
 // 型定義を追加
 interface ChartDataPoint {
@@ -17,6 +19,7 @@ interface StudyChartProps {
   chartData: any[];
   allStudyRecords: any[];
   userNamesMap: Map<string, string>;
+  userGradesMap?: Map<string, string>; // 学年情報マップを追加
 }
 
 // ユーザーごとに色を割り当てるための色配列
@@ -26,13 +29,51 @@ const USER_COLORS = [
   '#14b8a6', '#eab308', '#dc2626', '#059669', '#7c3aed'
 ];
 
-export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyChartProps) {
+export function StudyChart({ 
+  chartData, 
+  allStudyRecords, 
+  userNamesMap, 
+  userGradesMap = new Map() 
+}: StudyChartProps) {
   const [chartType, setChartType] = useState<'individual' | 'stacked'>('individual');
+  const [gradeFilter, setGradeFilter] = useState<string>('全学年');
 
-  // ユーザーごとの学習データを生成
+  // 利用可能な学年を取得
+  const getAvailableGrades = (): string[] => {
+    const grades = new Set<string>();
+    userGradesMap.forEach(grade => {
+      if (grade) grades.add(grade);
+    });
+    return ['全学年', ...Array.from(grades).sort()];
+  };
+
+  // 学年名の表示形式を取得
+  const getGradeDisplayName = (grade: string) => {
+    const gradeMap = {
+      '1学年': '1学年',
+      '2学年': '2学年', 
+      '3学年': '3学年',
+      'その他': 'その他'
+    };
+    return gradeMap[grade as keyof typeof gradeMap] || grade;
+  };
+
+  // 学年でフィルタリングされたユーザーIDを取得
+  const getFilteredUserIds = (): string[] => {
+    if (gradeFilter === '全学年') {
+      return Array.from(userNamesMap.keys());
+    }
+    
+    return Array.from(userNamesMap.keys()).filter(userId => {
+      const userGrade = userGradesMap.get(userId);
+      return userGrade === gradeFilter;
+    });
+  };
+
+  // ユーザーごとの学習データを生成（学年フィルタ付き）
   const generateUserChartData = (): ChartDataPoint[] => {
     const today = new Date();
-    const userIds = Array.from(userNamesMap.keys());
+    const filteredUserIds = getFilteredUserIds();
     
     // 日付ごと、ユーザーごとの学習時間を集計
     const dataByDateAndUser: Record<string, Record<string, number>> = {};
@@ -53,16 +94,16 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
       });
       
       dataByDateAndUser[dateStr] = {};
-      userIds.forEach(userId => {
+      filteredUserIds.forEach(userId => {
         dataByDateAndUser[dateStr][userId] = 0;
       });
     }
     
-    // 学習記録を集計
+    // 学習記録を集計（学年フィルタを適用）
     allStudyRecords.forEach(record => {
       const date = record.studyDate;
       const userId = record.userId;
-      if (dataByDateAndUser[date] && userIds.includes(userId)) {
+      if (dataByDateAndUser[date] && filteredUserIds.includes(userId)) {
         dataByDateAndUser[date][userId] += record.studyMinutes || 0;
       }
     });
@@ -74,7 +115,7 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
         dateLabel: dateLabel
       };
       
-      userIds.forEach(userId => {
+      filteredUserIds.forEach(userId => {
         const userName = userNamesMap.get(userId) || 'ユーザー';
         dayData[userName] = dataByDateAndUser[dateStr][userId];
       });
@@ -83,14 +124,14 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
     });
   };
 
-  // 累積学習時間データを生成（積み上げグラフ用）
+  // 累積学習時間データを生成（学年フィルタ付き）
   const generateCumulativeData = (): ChartDataPoint[] => {
     const today = new Date();
-    const userIds = Array.from(userNamesMap.keys());
+    const filteredUserIds = getFilteredUserIds();
     
     // 各ユーザーの累積学習時間を追跡
     const userCumulativeMinutes: Record<string, number> = {};
-    userIds.forEach(userId => {
+    filteredUserIds.forEach(userId => {
       userCumulativeMinutes[userId] = 0;
     });
     
@@ -114,16 +155,16 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
     const dailyStudyMinutes: Record<string, Record<string, number>> = {};
     dates.forEach(({ dateStr }) => {
       dailyStudyMinutes[dateStr] = {};
-      userIds.forEach(userId => {
+      filteredUserIds.forEach(userId => {
         dailyStudyMinutes[dateStr][userId] = 0;
       });
     });
     
-    // 学習記録を日付ごとに集計
+    // 学習記録を日付ごとに集計（学年フィルタを適用）
     allStudyRecords.forEach(record => {
       const date = record.studyDate;
       const userId = record.userId;
-      if (dailyStudyMinutes[date] && userIds.includes(userId)) {
+      if (dailyStudyMinutes[date] && filteredUserIds.includes(userId)) {
         dailyStudyMinutes[date][userId] += record.studyMinutes || 0;
       }
     });
@@ -136,7 +177,7 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
       };
       
       // 各ユーザーの累積時間を更新
-      userIds.forEach(userId => {
+      filteredUserIds.forEach(userId => {
         const userName = userNamesMap.get(userId) || 'ユーザー';
         userCumulativeMinutes[userId] += dailyStudyMinutes[dateStr][userId];
         dayData[userName] = userCumulativeMinutes[userId];
@@ -148,7 +189,8 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
 
   const userChartData = generateUserChartData();
   const cumulativeData = generateCumulativeData();
-  const userNames = Array.from(userNamesMap.values());
+  const filteredUserIds = getFilteredUserIds();
+  const filteredUserNames = filteredUserIds.map(id => userNamesMap.get(id) || 'ユーザー');
 
   // 個別折れ線グラフ用のツールチップフォーマット
   const formatIndividualTooltip = (value: number, name: string) => {
@@ -176,7 +218,7 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
       
       userChartData.forEach(dayData => {
         let dayTotal = 0;
-        userNames.forEach(userName => {
+        filteredUserNames.forEach(userName => {
           const minutes = (dayData[userName] as number) || 0;
           dayTotal += minutes;
         });
@@ -195,25 +237,30 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
       let totalMinutes = 0;
       let maxUserMinutes = 0;
       
-      userNames.forEach(userName => {
+      filteredUserNames.forEach(userName => {
         const userMinutes = (lastDayData[userName] as number) || 0;
         totalMinutes += userMinutes;
         maxUserMinutes = Math.max(maxUserMinutes, userMinutes);
       });
       
-      const avgMinutes = userNames.length > 0 ? Math.round(totalMinutes / userNames.length) : 0;
+      const avgMinutes = filteredUserNames.length > 0 ? Math.round(totalMinutes / filteredUserNames.length) : 0;
       return { totalMinutes, avgMinutes: avgMinutes, maxMinutes: maxUserMinutes };
     }
   };
 
   const stats = calculateStats();
+  const availableGrades = getAvailableGrades();
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle>📊 ユーザー別学習時間チャート</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              {gradeFilter !== '全学年' && `${getGradeDisplayName(gradeFilter)} `}
+              ユーザー別学習時間チャート
+            </CardTitle>
             <Badge variant="default" className="bg-indigo-500">
               直近10日
             </Badge>
@@ -236,120 +283,111 @@ export function StudyChart({ chartData, allStudyRecords, userNamesMap }: StudyCh
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {(chartType === 'individual' ? userChartData.length === 0 : cumulativeData.length === 0) || userNames.length === 0 ? (
+      <CardContent className="space-y-4">
+        {/* 学年フィルタ */}
+        <div className="flex items-center gap-3">
+          <GraduationCap className="w-4 h-4" />
+          <span className="text-sm font-medium">学年フィルタ:</span>
+          <Select onValueChange={(value) => setGradeFilter(value)} value={gradeFilter}>
+            <SelectTrigger className="w-[150px] h-9">
+              <SelectValue placeholder="学年を選択" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableGrades.map((grade) => (
+                <SelectItem key={grade} value={grade}>
+                  {grade === '全学年' ? '🌍 全学年' : `🎓 ${getGradeDisplayName(grade)}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Badge variant="outline" className="text-xs">
+            {filteredUserIds.length}人
+          </Badge>
+        </div>
+
+        {(chartType === 'individual' ? userChartData.length === 0 : cumulativeData.length === 0) || filteredUserNames.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            チャートデータがありません
+            {gradeFilter !== '全学年' 
+              ? `${getGradeDisplayName(gradeFilter)}のチャートデータがありません` 
+              : 'チャートデータがありません'
+            }
           </div>
         ) : (
           <>
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                {chartType === 'individual' ? (
-                  <LineChart
-                    data={userChartData}
-                    margin={{
-                      top: 5,
-                      right: 30,
-                      left: 20,
-                      bottom: 5,
+                <LineChart
+                  data={chartType === 'individual' ? userChartData : cumulativeData}
+                  margin={{
+                    top: 5,
+                    right: 30,
+                    left: 20,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    label={{ value: chartType === 'individual' ? '分' : '累積分', angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip 
+                    formatter={chartType === 'individual' ? formatIndividualTooltip : formatCumulativeTooltip}
+                    labelFormatter={(label) => {
+                      const data = (chartType === 'individual' ? userChartData : cumulativeData).find(d => d.date === label);
+                      const suffix = chartType === 'individual' ? '' : ' までの累積';
+                      return data ? `${data.dateLabel}${suffix}` : label;
                     }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fontSize: 12 }}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 12 }}
-                      label={{ value: '分', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip 
-                      formatter={formatIndividualTooltip}
-                      labelFormatter={(label) => {
-                        const data = userChartData.find(d => d.date === label);
-                        return data ? data.dateLabel : label;
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #ccc',
-                        borderRadius: '6px'
-                      }}
-                    />
-                    {userNames.map((userName, index) => (
-                      <Line
-                        key={userName}
-                        type="monotone"
-                        dataKey={userName}
-                        stroke={USER_COLORS[index % USER_COLORS.length]}
-                        strokeWidth={2}
-                        dot={{ fill: USER_COLORS[index % USER_COLORS.length], strokeWidth: 2, r: 4 }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
-                    ))}
-                  </LineChart>
-                ) : (
-                  <LineChart
-                    data={cumulativeData}
-                    margin={{
-                      top: 5,
-                      right: 30,
-                      left: 20,
-                      bottom: 5,
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #ccc',
+                      borderRadius: '6px'
                     }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fontSize: 12 }}
+                  />
+                  {filteredUserNames.map((userName, index) => (
+                    <Line
+                      key={userName}
+                      type="monotone"
+                      dataKey={userName}
+                      stroke={USER_COLORS[index % USER_COLORS.length]}
+                      strokeWidth={chartType === 'individual' ? 2 : 3}
+                      dot={{ fill: USER_COLORS[index % USER_COLORS.length], strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6 }}
+                      connectNulls={false}
                     />
-                    <YAxis 
-                      tick={{ fontSize: 12 }}
-                      label={{ value: '累積分', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip 
-                      formatter={formatCumulativeTooltip}
-                      labelFormatter={(label) => {
-                        const data = cumulativeData.find(d => d.date === label);
-                        return data ? `${data.dateLabel} までの累積` : label;
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #ccc',
-                        borderRadius: '6px'
-                      }}
-                    />
-                    {userNames.map((userName, index) => (
-                      <Line
-                        key={userName}
-                        type="monotone"
-                        dataKey={userName}
-                        stroke={USER_COLORS[index % USER_COLORS.length]}
-                        strokeWidth={3}
-                        dot={{ fill: USER_COLORS[index % USER_COLORS.length], strokeWidth: 2, r: 4 }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
-                    ))}
-                  </LineChart>
-                )}
+                  ))}
+                </LineChart>
               </ResponsiveContainer>
             </div>
 
             {/* ユーザー凡例 */}
             <div className="border-t pt-3">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">ユーザー凡例:</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                {gradeFilter !== '全学年' ? `${getGradeDisplayName(gradeFilter)} ` : ''}
+                ユーザー凡例:
+              </h4>
               <div className="flex flex-wrap gap-2">
-                {userNames.map((userName, index) => (
-                  <div key={userName} className="flex items-center gap-1">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: USER_COLORS[index % USER_COLORS.length] }}
-                    />
-                    <span className="text-xs text-gray-600">{userName}</span>
-                  </div>
-                ))}
+                {filteredUserNames.map((userName, index) => {
+                  const userId = filteredUserIds[index];
+                  const userGrade = userGradesMap.get(userId);
+                  return (
+                    <div key={userName} className="flex items-center gap-1">
+                      <div 
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: USER_COLORS[index % USER_COLORS.length] }}
+                      />
+                      <span className="text-xs text-gray-600">{userName}</span>
+                      {userGrade && gradeFilter === '全学年' && (
+                        <Badge variant="outline" className="text-xs h-4 px-1">
+                          {getGradeDisplayName(userGrade)}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             

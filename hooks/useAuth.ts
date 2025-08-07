@@ -6,6 +6,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, collections } from '@/lib/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { User } from '@/types/auth';
+import { ReviewStatsService } from '@/lib/db/reviewStatsService';
 
 // グローバル変数で初期化を管理（React Strict Mode 対応）
 let authInitialized = false;
@@ -49,6 +50,11 @@ export const useAuth = () => {
             const userData = userDoc.data();
             console.log('📄 User data from Firestore:', userData);
             
+            // 復習統計の更新（バックグラウンドで実行）
+            ReviewStatsService.updateUserReviewStats(firebaseUser.uid).catch(error => {
+              console.warn('⚠️ Failed to update review stats:', error);
+            });
+            
             // Firestoreのデータを使用
             basicUser = {
               uid: firebaseUser.uid,
@@ -57,7 +63,7 @@ export const useAuth = () => {
               photoURL: firebaseUser.photoURL || undefined,
               createdAt: userData.createdAt?.toDate() || new Date(),
               role: userData.role || 'student',
-              grade: userData.grade,
+              grade: userData.grade || 'その他', // 学年をデフォルト値で設定
               targetUniversity: userData.targetUniversity || '北海道大学',
               studyGoal: userData.studyGoal || {
                 totalHours: 1500,
@@ -74,7 +80,19 @@ export const useAuth = () => {
               course: userData.course || 'science',
               weeklyTarget: userData.weeklyTarget || 56,
               customSubjects: userData.customSubjects || {},
-              subjectSelection: userData.subjectSelection || {}
+              subjectSelection: userData.subjectSelection || {},
+              // 復習統計（新規追加）
+              reviewStats: userData.reviewStats ? {
+                totalReviewsCompleted: userData.reviewStats.totalReviewsCompleted || 0,
+                totalUnderstandingScore: userData.reviewStats.totalUnderstandingScore || 0,
+                averageUnderstanding: userData.reviewStats.averageUnderstanding || 0,
+                lastCalculatedAt: userData.reviewStats.lastCalculatedAt?.toDate() || new Date()
+              } : {
+                totalReviewsCompleted: 0,
+                totalUnderstandingScore: 0,
+                averageUnderstanding: 0,
+                lastCalculatedAt: new Date()
+              }
             };
           } else {
             console.log('⚠️ No user document found, creating default user');
@@ -86,6 +104,7 @@ export const useAuth = () => {
               photoURL: firebaseUser.photoURL || undefined,
               createdAt: new Date(),
               role: 'student',
+              grade: 'その他', // デフォルト学年
               targetUniversity: '北海道大学',
               studyGoal: {
                 totalHours: 1500,
@@ -101,7 +120,14 @@ export const useAuth = () => {
               course: 'science',
               weeklyTarget: 56,
               customSubjects: {},
-              subjectSelection: {}
+              subjectSelection: {},
+              // 復習統計の初期化
+              reviewStats: {
+                totalReviewsCompleted: 0,
+                totalUnderstandingScore: 0,
+                averageUnderstanding: 0,
+                lastCalculatedAt: new Date()
+              }
             };
           }
           

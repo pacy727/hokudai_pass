@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
 
@@ -20,6 +21,8 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [grade, setGrade] = useState<'1学年' | '2学年' | '3学年' | 'その他'>('3学年');
+  const [course, setCourse] = useState<'liberal' | 'science'>('science');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,6 +32,8 @@ export default function AuthPage() {
     setPassword('');
     setConfirmPassword('');
     setDisplayName('');
+    setGrade('3学年');
+    setCourse('science');
   };
 
   // モード切り替え
@@ -94,7 +99,7 @@ export default function AuthPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password || !displayName || !confirmPassword) {
+    if (!email || !password || !displayName || !confirmPassword || !grade) {
       toast({
         title: "入力エラー",
         description: "すべての項目を入力してください",
@@ -133,7 +138,12 @@ export default function AuthPage() {
         email: userCredential.user.email,
         displayName: displayName,
         role: 'student',
+        grade: grade, // 学年を追加
         targetUniversity: '北海道大学',
+        course: course, // コースを追加
+        weeklyTarget: 56,
+        customSubjects: {},
+        subjectSelection: {},
         studyGoal: {
           totalHours: 1500,
           dailyHours: 8,
@@ -144,6 +154,13 @@ export default function AuthPage() {
             理科: 350,
             社会: 250
           }
+        },
+        // 復習統計の初期化
+        reviewStats: {
+          totalReviewsCompleted: 0,
+          totalUnderstandingScore: 0,
+          averageUnderstanding: 0,
+          lastCalculatedAt: new Date()
         },
         createdAt: new Date()
       });
@@ -217,6 +234,57 @@ export default function AuthPage() {
                   required={!isLogin}
                   className="h-12"
                 />
+              </div>
+            )}
+
+            {/* 学年選択（新規登録時のみ） */}
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="grade">
+                  学年 <span className="text-red-500">*</span>
+                </Label>
+                <Select value={grade} onValueChange={(value) => setGrade(value as any)}>
+                  <SelectTrigger className="h-12">
+                    <SelectValue placeholder="学年を選択">
+                      {grade}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1学年">1学年</SelectItem>
+                    <SelectItem value="2学年">2学年</SelectItem>
+                    <SelectItem value="3学年">3学年</SelectItem>
+                    <SelectItem value="その他">その他</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* 文系/理系選択（新規登録時のみ） */}
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="course">
+                  専攻コース <span className="text-red-500">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant={course === 'liberal' ? 'default' : 'outline'}
+                    onClick={() => setCourse('liberal')}
+                    className="h-12 flex flex-col gap-1"
+                  >
+                    <span className="text-lg">📚</span>
+                    <span>文系</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={course === 'science' ? 'default' : 'outline'}
+                    onClick={() => setCourse('science')}
+                    className="h-12 flex flex-col gap-1"
+                  >
+                    <span className="text-lg">🔬</span>
+                    <span>理系</span>
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -347,6 +415,7 @@ export default function AuthPage() {
               <li>• 📊 詳細な学習分析とレポート</li>
               <li>• 👥 メンバーとの学習状況共有</li>
               <li>• 🎯 偏差値50→65確実達成サポート</li>
+              <li>• 🏫 学年別ランキングとチャート</li>
             </ul>
           </div>
         </CardContent>
