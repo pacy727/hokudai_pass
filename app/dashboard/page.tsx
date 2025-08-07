@@ -12,7 +12,7 @@ import { StudyRecord } from '@/types/study';
 import { useRouter } from 'next/navigation';
 import { Clock, Users, Trophy, BarChart3, MessageSquare } from 'lucide-react';
 
-// ダッシュボード用コンポーネント
+// ダッシュボード用コンポーネント（更新版）
 import { StudyingMembers } from '@/components/dashboard/StudyingMembers';
 import { StudyDeclarations } from '@/components/dashboard/StudyDeclarations';
 import { StudyTimeline } from '@/components/dashboard/StudyTimeline';
@@ -32,11 +32,12 @@ interface UserStats {
   };
 }
 
-// タイムラインアイテムの型定義
+// タイムラインアイテムの型定義（userIdを追加）
 interface TimelineItem {
   id: string;
   type: 'study_record';
   userName: string;
+  userId: string; // ユーザーIDを追加
   timestamp: Date;
   subject: string;
   content: string;
@@ -255,7 +256,7 @@ export default function DashboardPage() {
     console.log('🏆 Ranking data with grades generated');
   };
 
-  // タイムラインデータ生成（全ユーザーの学習記録のみ）
+  // タイムラインデータ生成（全ユーザーの学習記録のみ、userIdを含む）
   const generateTimelineData = (records: StudyRecord[], userNames: Map<string, string>) => {
     console.log('🕒 Generating timeline data for all users...');
     
@@ -269,6 +270,7 @@ export default function DashboardPage() {
         id: `study_${record.id}`,
         type: 'study_record',
         userName: userName,
+        userId: record.userId, // ユーザーIDを追加
         timestamp: record.createdAt,
         subject: record.subject,
         content: record.content,
@@ -378,29 +380,32 @@ export default function DashboardPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* 学習中のメンバータブ */}
+        {/* 学習中のメンバータブ（学年バッジ付き） */}
         <TabsContent value="studying" className="space-y-4 mt-6">
           <StudyingMembers 
             studyingMembers={studyingMembers}
             notStudyingMembers={notStudyingMembers}
             user={user}
+            userGradesMap={userGradesMap}
           />
         </TabsContent>
 
-        {/* 学習宣言タブ */}
+        {/* 学習宣言タブ（学年フィルタ付き） */}
         <TabsContent value="declarations" className="space-y-4 mt-6">
           <StudyDeclarations 
             declarations={declarations}
             postDeclaration={postDeclaration}
             user={user}
+            userGradesMap={userGradesMap}
           />
         </TabsContent>
 
-        {/* タイムラインタブ（全ユーザーの学習記録のみ） */}
+        {/* タイムラインタブ（学年フィルタ付き） */}
         <TabsContent value="timeline" className="space-y-4 mt-6">
           <StudyTimeline 
             timelineData={timelineData}
             user={user}
+            userGradesMap={userGradesMap}
           />
         </TabsContent>
 

@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { Subject } from '@/types/study';
-import { Clock, BookOpen, Target, MessageCircle, RefreshCw, Calculator } from 'lucide-react';
+import { Clock, BookOpen, Target, MessageCircle, RefreshCw, Calculator, Calendar } from 'lucide-react';
 
 export default function RecordPage() {
   const router = useRouter();
@@ -28,6 +28,7 @@ export default function RecordPage() {
   
   // フォーム状態
   const [subject, setSubject] = useState<Subject>('数学');
+  const [studyDate, setStudyDate] = useState(''); // 新規追加：日付選択
   const [studyMinutes, setStudyMinutes] = useState<number>(60);
   const [startTime, setStartTime] = useState('');
   const [content, setContent] = useState('');
@@ -43,6 +44,10 @@ export default function RecordPage() {
       return;
     }
 
+    // 本日の日付をデフォルト値として設定
+    const today = new Date().toISOString().split('T')[0];
+    setStudyDate(today);
+
     const dataParam = searchParams.get('data');
     if (dataParam) {
       try {
@@ -54,6 +59,7 @@ export default function RecordPage() {
         if (data.subject) setSubject(data.subject);
         if (data.studyHours) setStudyMinutes(Math.round(data.studyHours * 60));
         if (data.startTime) setStartTime(data.startTime);
+        if (data.studyDate) setStudyDate(data.studyDate); // タイマーから日付も取得
       } catch (error) {
         console.error('Failed to parse timer data:', error);
       }
@@ -154,6 +160,15 @@ export default function RecordPage() {
       return;
     }
 
+    if (!studyDate) {
+      toast({
+        title: "エラー",
+        description: "日付を選択してください",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!user) return;
 
     setIsSubmitting(true);
@@ -161,7 +176,7 @@ export default function RecordPage() {
     try {
       const recordData: any = {
         userId: user.uid,
-        studyDate: timerData?.studyDate || new Date().toISOString().split('T')[0],
+        studyDate: studyDate, // 選択された日付を使用
         subject: subject,
         studyMinutes: studyMinutes, // 分単位で直接保存
         startTime: startTime,
@@ -266,6 +281,11 @@ export default function RecordPage() {
                     <Badge variant="secondary">時間</Badge>
                     <span className="font-medium">{timerData.startTime} 〜 {calculateEndTime(timerData.startTime, Math.round(timerData.studyHours * 60))}</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-green-600" />
+                    <Badge variant="secondary">日付</Badge>
+                    <span className="font-medium">{studyDate}</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -299,8 +319,24 @@ export default function RecordPage() {
                   </Select>
                 </div>
 
-                {/* 時間設定 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 日付・時間設定を横並びに */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* 学習日 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="studyDate" className="text-base">
+                      📅 学習日
+                      <span className="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Input
+                      id="studyDate"
+                      type="date"
+                      value={studyDate}
+                      onChange={(e) => setStudyDate(e.target.value)}
+                      className="h-12"
+                      required
+                    />
+                  </div>
+
                   {/* 開始時間 */}
                   <div className="space-y-2">
                     <Label htmlFor="startTime" className="text-base">
@@ -356,6 +392,27 @@ export default function RecordPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* タイマー使用時も日付を表示・編集可能にする */}
+            {isFromTimer && (
+              <div className="space-y-2">
+                <Label htmlFor="studyDateTimer" className="text-base">
+                  📅 学習日
+                  <span className="text-red-500 ml-1">*</span>
+                </Label>
+                <Input
+                  id="studyDateTimer"
+                  type="date"
+                  value={studyDate}
+                  onChange={(e) => setStudyDate(e.target.value)}
+                  className="h-12"
+                  required
+                />
+                <p className="text-sm text-muted-foreground">
+                  必要に応じて日付を変更できます
+                </p>
               </div>
             )}
 
@@ -462,7 +519,7 @@ export default function RecordPage() {
             <div className="flex flex-col gap-3">
               <Button
                 type="submit"
-                disabled={isSubmitting || !content.trim() || !subject || studyMinutes <= 0}
+                disabled={isSubmitting || !content.trim() || !subject || studyMinutes <= 0 || !studyDate}
                 className="w-full h-14 text-base"
                 size="lg"
               >
@@ -507,6 +564,7 @@ export default function RecordPage() {
           <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <h4 className="font-semibold text-blue-800 mb-2">💡 記録のコツ</h4>
             <ul className="text-sm text-blue-700 space-y-1">
+              <li>• 日付は実際に学習した日を選択してください</li>
               <li>• 単元名は具体的に（例：二次関数の最大値・最小値）</li>
               <li>• 詳細には解いた問題数や理解度を記録</li>
               <li>• 感想には次回への改善点も書いてみよう</li>

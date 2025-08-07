@@ -13,14 +13,15 @@ import {
 import { db } from '../firebase';
 import { ReviewItem, ReviewQuestion, ReviewResult, StudyLog, StudyProgress, ReviewStage, ReviewProgress, TodayTask, ReviewSchedule } from '@/types/review';
 import { Subject } from '@/types/study';
-import { ReviewStatsService } from './reviewStatsService'; // 復習統計サービスをインポート
+import { ReviewStatsService } from './reviewStatsService';
 
 // コレクション名
 const COLLECTIONS = {
   reviewItems: 'review_items',
   reviewQuestions: 'review_questions',
   reviewResults: 'review_results',
-  studyLogs: 'study_logs'
+  studyLogs: 'study_logs',
+  reviewQuestionRequests: 'review_question_requests' // 追加
 };
 
 // 復習スケジュール設定
@@ -88,7 +89,6 @@ export class ReviewService {
   static async getReviewItems(userId: string): Promise<ReviewItem[]> {
     try {
       console.log('🔍 [ReviewService] Fetching review items for user:', userId);
-      console.log('🔍 [ReviewService] Using collection:', COLLECTIONS.reviewItems);
       
       const q = query(
         collection(db, COLLECTIONS.reviewItems),
@@ -133,10 +133,6 @@ export class ReviewService {
       return sortedItems;
     } catch (error) {
       console.error('❌ [ReviewService] Error fetching review items:', error);
-      console.error('❌ [ReviewService] Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack trace'
-      });
       return [];
     }
   }
@@ -157,17 +153,16 @@ export class ReviewService {
   static async getTodayTasks(userId: string): Promise<TodayTask[]> {
     const activeItems = await this.getActiveReviewItems(userId);
     const today = new Date();
-    today.setHours(23, 59, 59, 999); // 今日の終わりまで
+    today.setHours(23, 59, 59, 999);
     
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0); // 今日の始まり
+    todayStart.setHours(0, 0, 0, 0);
     
     const tasks: TodayTask[] = [];
     
     activeItems.forEach(item => {
       const currentProgress = item.progress.find(p => p.stage === item.currentStage);
       if (currentProgress && !currentProgress.isCompleted && currentProgress.scheduledDate <= today) {
-        // 今日の日付と比較（時分秒を無視）
         const scheduledDateOnly = new Date(currentProgress.scheduledDate);
         scheduledDateOnly.setHours(0, 0, 0, 0);
         
@@ -186,7 +181,6 @@ export class ReviewService {
       }
     });
     
-    // 期限切れ → 今日 → 未来の順でソート
     return tasks.sort((a, b) => {
       if (a.isOverdue && !b.isOverdue) return -1;
       if (!a.isOverdue && b.isOverdue) return 1;
@@ -220,9 +214,8 @@ export class ReviewService {
         return p;
       });
 
-      // 次のステージに進む
       const nextStage = stage < 5 ? (stage + 1) as ReviewStage : stage;
-      const isCompleted = stage === 5; // 最終ステージ完了
+      const isCompleted = stage === 5;
 
       const updates = {
         progress: updatedProgress,
@@ -233,18 +226,16 @@ export class ReviewService {
 
       await updateDoc(doc(db, COLLECTIONS.reviewItems, reviewItemId), updates);
 
-      // 復習結果を保存
       const reviewResult = await this.saveReviewResult({
         userId: itemData.userId,
         reviewItemId,
         stage,
         understanding,
-        timeSpent: 0, // TODO: 実際の時間計測
+        timeSpent: 0,
         questionId: "",
-        result: understanding >= 70 ? "success" : "failure" // 70点以上を成功とする
+        result: understanding >= 70 ? "success" : "failure"
       });
 
-      // 復習統計を更新（バックグラウンドで実行）
       ReviewStatsService.onReviewCompleted(itemData.userId, understanding).catch(error => {
         console.warn('⚠️ Failed to update review stats:', error);
       });
@@ -266,20 +257,88 @@ export class ReviewService {
     return docRef.id;
   }
 
-  // 復習問題取得（シンプルクエリ + クライアントサイドソート）
-  static async getReviewQuestions(reviewItemId: string): Promise<ReviewQuestion[]> {
+  // 復習問題取得（復習問題リクエストから作成された問題を含む）
+  static async getReviewQuestions(reviewItemId: string, targetStage?: ReviewStage): Promise<ReviewQuestion[]> {
     try {
-      console.log('🔍 Fetching review questions for item:', reviewItemId);
+      console.log('🔍 Fetching review questions for item:', reviewItemId, 'stage:', targetStage);
       
-      const q = query(
-        collection(db, COLLECTIONS.reviewQuestions),
-        where('reviewItemId', '==', reviewItemId)
+      // まず、復習アイテムから studyRecordId を取得
+      const reviewItemQuery = query(
+        collection(db, COLLECTIONS.reviewItems),
+        where('__name__', '==', reviewItemId)
       );
+      const reviewItemSnapshot = await getDocs(reviewItemQuery);
       
-      const snapshot = await getDocs(q);
-      console.log('📄 Raw review questions count:', snapshot.docs.length);
+      if (reviewItemSnapshot.empty) {
+        console.log('⚠️ Review item not found:', reviewItemId);
+        return [];
+      }
       
-      const questions = snapshot.docs.map(doc => {
+      const reviewItemData = reviewItemSnapshot.docs[0].data();
+      const studyRecordId = reviewItemData.studyRecordId;
+      
+      console.log('📄 Found studyRecordId:', studyRecordId);
+      
+      // 復習問題リクエストを検索
+      const requestQuery = query(
+        collection(db, COLLECTIONS.reviewQuestionRequests),
+        where('studyRecordId', '==', studyRecordId)
+      );
+      const requestSnapshot = await getDocs(requestQuery);
+      
+      let questions: ReviewQuestion[] = [];
+      
+      if (!requestSnapshot.empty) {
+        // 復習問題リクエストが見つかった場合、関連する問題を取得
+        const requestData = requestSnapshot.docs[0].data();
+        const requestId = requestSnapshot.docs[0].id;
+        
+        console.log('📋 Found review question request:', requestId);
+        
+        // 復習問題リクエストから作成された問題を取得
+        let questionQuery = query(
+          collection(db, COLLECTIONS.reviewQuestions),
+          where('reviewQuestionRequestId', '==', requestId)
+        );
+        
+        // 特定の段階の問題のみ取得する場合
+        if (targetStage) {
+          questionQuery = query(
+            collection(db, COLLECTIONS.reviewQuestions),
+            where('reviewQuestionRequestId', '==', requestId),
+            where('targetStage', '==', targetStage)
+          );
+        }
+        
+        const questionSnapshot = await getDocs(questionQuery);
+        
+        questions = questionSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt.toDate(),
+            updatedAt: data.updatedAt.toDate()
+          };
+        }) as ReviewQuestion[];
+        
+        console.log(`📚 Found ${questions.length} questions from review request`);
+      }
+      
+      // 従来の復習問題も取得（reviewItemId で直接関連付けられたもの）
+      const directQuestionQuery = targetStage
+        ? query(
+            collection(db, COLLECTIONS.reviewQuestions),
+            where('reviewItemId', '==', reviewItemId),
+            where('targetStage', '==', targetStage)
+          )
+        : query(
+            collection(db, COLLECTIONS.reviewQuestions),
+            where('reviewItemId', '==', reviewItemId)
+          );
+      
+      const directQuestionSnapshot = await getDocs(directQuestionQuery);
+      const directQuestions = directQuestionSnapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
@@ -288,17 +347,33 @@ export class ReviewService {
           updatedAt: data.updatedAt.toDate()
         };
       }) as ReviewQuestion[];
-
-      const sortedQuestions = questions.sort((a, b) => {
+      
+      console.log(`📚 Found ${directQuestions.length} direct questions`);
+      
+      // 両方の問題を統合
+      questions = [...questions, ...directQuestions];
+      
+      // 重複を除去（IDで判定）
+      const uniqueQuestions = questions.filter((question, index, self) =>
+        index === self.findIndex(q => q.id === question.id)
+      );
+      
+      // 作成日時でソート
+      const sortedQuestions = uniqueQuestions.sort((a, b) => {
         return b.createdAt.getTime() - a.createdAt.getTime();
       });
 
-      console.log('✅ Review questions sorted by creation date');
+      console.log(`✅ Total ${sortedQuestions.length} unique questions found and sorted`);
       return sortedQuestions;
     } catch (error) {
       console.error('❌ Error fetching review questions:', error);
       return [];
     }
+  }
+
+  // 特定の段階の復習問題を取得（新規メソッド）
+  static async getReviewQuestionsForStage(reviewItemId: string, stage: ReviewStage): Promise<ReviewQuestion[]> {
+    return this.getReviewQuestions(reviewItemId, stage);
   }
 
   // 学習ログ取得（シンプルクエリ + クライアントサイドソート）
@@ -405,10 +480,6 @@ export class ReviewService {
   static async updateReviewSchedule(reviewItemId: string, success: boolean): Promise<void> {
     try {
       console.log('📅 Updating review schedule for item:', reviewItemId, 'success:', success);
-      
-      // 成功/失敗に基づく次回復習間隔の調整ロジックをここに実装
-      // 現在は基本的なスケジュールを維持
-      
       console.log('✅ Review schedule updated');
     } catch (error) {
       console.error('❌ Error updating review schedule:', error);
