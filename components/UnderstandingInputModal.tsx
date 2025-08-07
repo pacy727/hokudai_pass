@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, CheckCircle, Brain, BookOpen, Clock } from 'lucide-react';
+import { X, CheckCircle, Brain, BookOpen, Clock, XCircle, AlertCircle } from 'lucide-react';
 import { ReviewItem, ReviewStage, ReviewQuestion } from '@/types/review';
 import { ReviewService } from '@/lib/db/reviewService';
+import { ReviewQuestionRequestService } from '@/lib/db/reviewQuestionRequestService';
 
 interface UnderstandingInputModalProps {
   reviewItem: ReviewItem;
@@ -15,6 +16,114 @@ interface UnderstandingInputModalProps {
   onClose: () => void;
   onSubmit: (understanding: number) => void;
 }
+
+// 却下メッセージ表示用コンポーネント（改良版）
+const RejectionMessage = ({ request }: { request: any }) => {
+  if (!request || request.status !== 'rejected' || !request.adminResponse) {
+    return null;
+  }
+
+  return (
+    <Card className="border-red-300 bg-red-50 mb-6 shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center space-x-2 text-red-700 text-base">
+          <XCircle className="h-5 w-5" />
+          <span>復習問題リクエストが却下されました</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-start space-x-2">
+            <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-red-600 font-medium">
+              管理者からの却下理由:
+            </div>
+          </div>
+          <div className="p-4 bg-white border border-red-200 rounded-lg shadow-sm">
+            <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+              {request.adminResponse}
+            </div>
+          </div>
+          <div className="bg-red-100 p-3 rounded-lg border border-red-200">
+            <div className="text-xs text-red-700 space-y-1">
+              <div className="font-medium">💡 次のステップ:</div>
+              <div>• 却下理由を確認し、内容を見直してください</div>
+              <div>• 必要に応じて詳細情報を追加して新しいリクエストを作成してください</div>
+              <div>• 不明な点があれば管理者にお問い合わせください</div>
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
+            却下日時: {request.updatedAt?.toLocaleString('ja-JP') || '不明'}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// リクエスト情報表示コンポーネント（新規追加）
+const RequestInfoMessage = ({ request }: { request: any }) => {
+  if (!request) {
+    return null;
+  }
+
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return {
+          color: 'bg-yellow-50 border-yellow-200',
+          textColor: 'text-yellow-800',
+          icon: <Clock className="h-4 w-4 text-yellow-600" />,
+          title: '復習問題リクエスト受付中',
+          message: '管理者が復習問題を作成中です。しばらくお待ちください。'
+        };
+      case 'in_progress':
+        return {
+          color: 'bg-blue-50 border-blue-200',
+          textColor: 'text-blue-800',
+          icon: <BookOpen className="h-4 w-4 text-blue-600" />,
+          title: '復習問題作成中',
+          message: '管理者が復習問題を作成しています。完成までしばらくお待ちください。'
+        };
+      case 'completed':
+        return {
+          color: 'bg-green-50 border-green-200',
+          textColor: 'text-green-800',
+          icon: <CheckCircle className="h-4 w-4 text-green-600" />,
+          title: '復習問題が利用可能です',
+          message: '復習問題が作成されました。下記の問題を解いて理解度を評価してください。'
+        };
+      default:
+        return null;
+    }
+  };
+
+  const statusInfo = getStatusInfo(request.status);
+  if (!statusInfo || request.status === 'rejected') {
+    return null;
+  }
+
+  return (
+    <Card className={`${statusInfo.color} mb-6 shadow-sm`}>
+      <CardHeader className="pb-3">
+        <CardTitle className={`flex items-center space-x-2 ${statusInfo.textColor} text-base`}>
+          {statusInfo.icon}
+          <span>{statusInfo.title}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className={`text-sm ${statusInfo.textColor}`}>
+            {statusInfo.message}
+          </div>
+          <div className="text-xs text-gray-600 bg-white bg-opacity-50 p-2 rounded">
+            リクエスト日時: {request.createdAt?.toLocaleString('ja-JP') || '不明'}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 // 個別問題コンポーネント（シンプル版）
 function QuestionItem({ question, index }: { 
@@ -118,6 +227,10 @@ export function UnderstandingInputModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewQuestions, setReviewQuestions] = useState<ReviewQuestion[]>([]);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
+  
+  // 復習問題リクエスト情報を取得
+  const [reviewQuestionRequest, setReviewQuestionRequest] = useState<any>(null);
+  const [isLoadingRequest, setIsLoadingRequest] = useState(true);
 
   const handleSubmit = async () => {
     if (understanding < 0 || understanding > 100) return;
@@ -147,7 +260,7 @@ export function UnderstandingInputModal({
     return { label: '理解不足', color: 'text-red-600', emoji: '😅' };
   };
 
-  // 復習問題を取得（特定の段階の問題のみ）
+  // 復習問題とリクエスト情報を取得
   useEffect(() => {
     if (isOpen) {
       const loadQuestions = async () => {
@@ -162,9 +275,28 @@ export function UnderstandingInputModal({
           setIsLoadingQuestions(false);
         }
       };
+
+      const loadQuestionRequest = async () => {
+        setIsLoadingRequest(true);
+        try {
+          // 復習アイテムからstudyRecordIdを取得し、関連するリクエストを検索
+          if (reviewItem.studyRecordId) {
+            const requests = await ReviewQuestionRequestService.getRequestsByStudyRecordId(reviewItem.studyRecordId);
+            if (requests.length > 0) {
+              setReviewQuestionRequest(requests[0]);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading review question request:', error);
+        } finally {
+          setIsLoadingRequest(false);
+        }
+      };
+      
       loadQuestions();
+      loadQuestionRequest();
     }
-  }, [isOpen, reviewItem.id, stage]);
+  }, [isOpen, reviewItem.id, reviewItem.studyRecordId, stage]);
 
   const schedule = ReviewService.getReviewSchedule();
   const stageName = schedule.stages.find(s => s.stage === stage)?.name || `第${stage}回`;
@@ -192,7 +324,7 @@ export function UnderstandingInputModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-        {/* ヘッダー（シンプル版） */}
+        {/* ヘッダー */}
         <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <h2 className="text-xl font-bold">{displayText}</h2>
@@ -211,6 +343,22 @@ export function UnderstandingInputModal({
         </div>
 
         <div className="p-6 space-y-6">
+          {/* ローディング中の表示 */}
+          {isLoadingRequest ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
+              <span className="text-gray-600 text-sm">リクエスト情報を確認中...</span>
+            </div>
+          ) : (
+            <>
+              {/* 却下メッセージ表示（最上部） */}
+              <RejectionMessage request={reviewQuestionRequest} />
+              
+              {/* リクエスト情報表示（却下以外の場合） */}
+              <RequestInfoMessage request={reviewQuestionRequest} />
+            </>
+          )}
+
           {/* 復習問題セクション */}
           <div>
             {isLoadingQuestions ? (
@@ -231,6 +379,11 @@ export function UnderstandingInputModal({
                 <div className="text-sm text-orange-600 bg-orange-100 rounded p-3 inline-block">
                   💡 復習のポイント：重要な部分を再確認し、理解度を評価してみましょう
                 </div>
+                {reviewQuestionRequest && reviewQuestionRequest.status === 'rejected' && (
+                  <div className="mt-4 text-sm text-gray-600">
+                    復習問題のリクエストが却下されたため、自習で復習を進めてください。
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-6">

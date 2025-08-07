@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { ReviewQuestionRequest, ReviewStage, ReviewQuestion } from '@/types/review';
 import { 
@@ -21,9 +22,12 @@ import {
   Plus,
   ArrowLeft,
   X,
-  Shield
+  Shield,
+  RotateCcw,
+  PlayCircle
 } from 'lucide-react';
 import { QuestionAssignmentModal } from '@/components/admin/QuestionAssignmentModal';
+import { RejectionModal } from '@/components/admin/RejectionModal';
 
 export default function AdminReviewRequestsPage() {
   const { user, isLoading } = useAuth();
@@ -39,6 +43,15 @@ export default function AdminReviewRequestsPage() {
   // 問題確認モーダル用の state
   const [selectedQuestionForView, setSelectedQuestionForView] = useState<ReviewQuestion | null>(null);
   const [isQuestionViewModalOpen, setIsQuestionViewModalOpen] = useState(false);
+
+  // 却下モーダル用の state
+  const [selectedRequestForRejection, setSelectedRequestForRejection] = useState<ReviewQuestionRequest | null>(null);
+  const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
+
+  // ステータス変更モーダル用の state（新規追加）
+  const [selectedRequestForStatusChange, setSelectedRequestForStatusChange] = useState<ReviewQuestionRequest | null>(null);
+  const [isStatusChangeModalOpen, setIsStatusChangeModalOpen] = useState(false);
+  const [newStatus, setNewStatus] = useState<ReviewQuestionRequest['status']>('pending');
 
   // 管理者権限チェック
   useEffect(() => {
@@ -94,6 +107,66 @@ export default function AdminReviewRequestsPage() {
         variant: "destructive"
       });
     }
+  };
+
+  // 却下処理関数
+  const handleRejectRequest = async (requestId: string, reason: string) => {
+    try {
+      await ReviewQuestionRequestService.updateRequestStatus(requestId, 'rejected', reason);
+      await loadRequests(); // データを再読み込み
+      
+      toast({
+        title: "リクエスト却下完了",
+        description: "復習問題リクエストを却下しました"
+      });
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      toast({
+        title: "エラー",
+        description: "却下処理に失敗しました",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // ステータス変更処理（新規追加）
+  const handleStatusChange = async (requestId: string, newStatus: ReviewQuestionRequest['status']) => {
+    try {
+      const statusMessages = {
+        pending: 'リクエストを受付中に戻しました。',
+        in_progress: '復習問題の作成を開始します。',
+        completed: 'リクエストを完了済みに変更しました。',
+        rejected: 'リクエストを却下しました。'
+      };
+
+      await ReviewQuestionRequestService.updateRequestStatus(requestId, newStatus, statusMessages[newStatus]);
+      await loadRequests();
+      
+      toast({
+        title: "ステータス変更完了",
+        description: `リクエストのステータスを「${getStatusLabel(newStatus)}」に変更しました`
+      });
+    } catch (error) {
+      console.error('Error changing status:', error);
+      toast({
+        title: "エラー",
+        description: "ステータスの変更に失敗しました",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // 却下ボタンのクリックハンドラー
+  const handleRejectButtonClick = (request: ReviewQuestionRequest) => {
+    setSelectedRequestForRejection(request);
+    setIsRejectionModalOpen(true);
+  };
+
+  // ステータス変更ボタンのクリックハンドラー（新規追加）
+  const handleStatusChangeButtonClick = (request: ReviewQuestionRequest) => {
+    setSelectedRequestForStatusChange(request);
+    setNewStatus(request.status); // 現在のステータスを初期値に
+    setIsStatusChangeModalOpen(true);
   };
 
   // 問題割り当てモーダルを開く
@@ -334,11 +407,16 @@ export default function AdminReviewRequestsPage() {
                               {request.content}
                             </span>
                           </div>
-                          {(request.details || request.memo) && (
+                          {(request.details || request.memo || request.adminResponse) && (
                             <div className="text-xs text-gray-400 truncate mt-1">
                               {request.details && `詳細: ${request.details}`}
                               {request.details && request.memo && ' | '}
                               {request.memo && `メモ: ${request.memo}`}
+                              {request.adminResponse && (
+                                <div className={`mt-1 ${request.status === 'rejected' ? 'text-red-500' : 'text-blue-500'}`}>
+                                  {request.status === 'rejected' ? '却下理由' : '管理者メモ'}: {request.adminResponse}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -352,14 +430,16 @@ export default function AdminReviewRequestsPage() {
                                 onClick={() => handleStatusUpdate(request.id, 'in_progress', '復習問題の作成を開始します。')}
                                 className="h-6 px-2 text-xs"
                               >
+                                <PlayCircle className="w-3 h-3 mr-1" />
                                 開始
                               </Button>
                               <Button 
                                 size="sm" 
                                 variant="destructive"
-                                onClick={() => handleStatusUpdate(request.id, 'rejected', 'リクエストを却下しました。')}
+                                onClick={() => handleRejectButtonClick(request)}
                                 className="h-6 px-2 text-xs"
                               >
+                                <XCircle className="w-3 h-3 mr-1" />
                                 却下
                               </Button>
                             </>
@@ -372,9 +452,22 @@ export default function AdminReviewRequestsPage() {
                               onClick={() => handleAssignQuestions(request)}
                               className="h-6 px-2 text-xs"
                             >
+                              <Plus className="w-3 h-3 mr-1" />
                               問題作成
                             </Button>
                           )}
+
+                          {/* ステータス変更ボタン（新規追加） */}
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleStatusChangeButtonClick(request)}
+                            className="h-6 px-2 text-xs"
+                            title="ステータス変更"
+                          >
+                            <RotateCcw className="w-3 h-3 mr-1" />
+                            変更
+                          </Button>
                           
                           <span className="text-xs text-gray-300 ml-2">
                             {request.id.slice(0, 4)}
@@ -407,7 +500,131 @@ export default function AdminReviewRequestsPage() {
         />
       )}
 
-      {/* 問題確認モーダル（修正版） */}
+      {/* 却下モーダル */}
+      {selectedRequestForRejection && (
+        <RejectionModal
+          isOpen={isRejectionModalOpen}
+          onClose={() => {
+            setIsRejectionModalOpen(false);
+            setSelectedRequestForRejection(null);
+          }}
+          request={selectedRequestForRejection}
+          onReject={handleRejectRequest}
+        />
+      )}
+
+      {/* ステータス変更モーダル（新規追加） */}
+      {selectedRequestForStatusChange && isStatusChangeModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center space-x-2">
+                  <RotateCcw className="h-5 w-5" />
+                  <span>ステータス変更</span>
+                </CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setIsStatusChangeModalOpen(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            
+            <CardContent>
+              <div className="space-y-4">
+                {/* リクエスト情報 */}
+                <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                  <div><strong>学習者:</strong> {selectedRequestForStatusChange.userName}</div>
+                  <div><strong>科目:</strong> {selectedRequestForStatusChange.subject}</div>
+                  <div><strong>単元:</strong> {selectedRequestForStatusChange.unit}</div>
+                  <div><strong>現在のステータス:</strong> 
+                    <Badge className={`ml-2 ${getStatusColor(selectedRequestForStatusChange.status)}`}>
+                      {getStatusLabel(selectedRequestForStatusChange.status)}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* ステータス選択 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">新しいステータス</label>
+                  <Select value={newStatus} onValueChange={(value) => setNewStatus(value as ReviewQuestionRequest['status'])}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">
+                        <div className="flex items-center space-x-2">
+                          <Clock className="h-4 w-4 text-yellow-600" />
+                          <span>受付中</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="in_progress">
+                        <div className="flex items-center space-x-2">
+                          <PlayCircle className="h-4 w-4 text-blue-600" />
+                          <span>作業中</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="completed">
+                        <div className="flex items-center space-x-2">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span>完了</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="rejected">
+                        <div className="flex items-center space-x-2">
+                          <XCircle className="h-4 w-4 text-red-600" />
+                          <span>却下</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 注意事項 */}
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+                  <div className="flex items-start space-x-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <strong>注意:</strong> ステータスを「却下」に変更する場合は、却下モーダルから理由を入力してください。
+                    </div>
+                  </div>
+                </div>
+
+                {/* ボタン */}
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsStatusChangeModalOpen(false)}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (newStatus === 'rejected') {
+                        // 却下の場合は専用モーダルを開く
+                        setIsStatusChangeModalOpen(false);
+                        setSelectedRequestForRejection(selectedRequestForStatusChange);
+                        setIsRejectionModalOpen(true);
+                      } else {
+                        handleStatusChange(selectedRequestForStatusChange.id, newStatus);
+                        setIsStatusChangeModalOpen(false);
+                      }
+                    }}
+                    disabled={newStatus === selectedRequestForStatusChange.status}
+                  >
+                    変更実行
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 問題確認モーダル */}
       {selectedQuestionForView && isQuestionViewModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">

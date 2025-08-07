@@ -391,14 +391,45 @@ export default function ProfilePage() {
             <TabsContent value="timeline" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Clock className="h-5 w-5" />
-                    <span>タイムライン</span>
-                    <Badge variant="outline">{studyLogs.length}件</Badge>
-                  </CardTitle>
-                  <p className="text-sm text-gray-600">
-                    復習リスト登録された学習記録の時系列表示
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center space-x-2">
+                        <Clock className="h-5 w-5" />
+                        <span>タイムライン</span>
+                        <Badge variant="outline">{studyLogs.length}件</Badge>
+                      </CardTitle>
+                      <p className="text-sm text-gray-600 mt-1">
+                        復習リスト登録された学習記録の時系列表示
+                      </p>
+                    </div>
+                    
+                    {/* 学習時間統計表示 */}
+                    <div className="flex flex-col gap-2 text-right">
+                      <div className="flex items-center gap-4 text-sm">
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs text-gray-500">直近7日間</span>
+                          <span className="font-bold text-blue-600">
+                            {(() => {
+                              const sevenDaysAgo = new Date();
+                              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                              const recentLogs = studyLogs.filter(log => log.studyDate >= sevenDaysAgo);
+                              const totalMinutes = recentLogs.reduce((sum, log) => sum + log.duration, 0);
+                              return formatTime(totalMinutes);
+                            })()}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs text-gray-500">累計学習時間</span>
+                          <span className="font-bold text-green-600">
+                            {(() => {
+                              const totalMinutes = studyLogs.reduce((sum, log) => sum + log.duration, 0);
+                              return formatTime(totalMinutes);
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {studyLogs.length === 0 ? (
