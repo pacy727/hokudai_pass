@@ -4,7 +4,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
 import { BookOpen } from 'lucide-react';
 import { Subject } from '@/types/study';
 import { StudyRecord } from '@/types/study';
@@ -147,38 +146,21 @@ export function SubjectStudyTimeCard({ studyRecords, user }: SubjectStudyTimeCar
     return Math.max(...times, 1); // 最小1で除算エラー防止
   };
 
-  // 教科の背景色を取得
-  const getSubjectColor = (subject: Subject): string => {
-    const colors = {
-      数学: 'bg-blue-50 border-blue-200',
-      英語: 'bg-green-50 border-green-200',
-      国語: 'bg-red-50 border-red-200',
-      情報: 'bg-cyan-50 border-cyan-200',
-      理科: 'bg-purple-50 border-purple-200',
-      理科1: 'bg-purple-50 border-purple-200',
-      理科2: 'bg-purple-100 border-purple-300',
-      社会: 'bg-orange-50 border-orange-200',
-      社会1: 'bg-orange-50 border-orange-200',
-      社会2: 'bg-orange-100 border-orange-300'
+  // 教科のアイコンと色を取得
+  const getSubjectInfo = (subject: Subject) => {
+    const subjectMap = {
+      数学: { icon: '🔢', color: 'bg-blue-500', textColor: 'text-blue-700' },
+      英語: { icon: '🗣️', color: 'bg-green-500', textColor: 'text-green-700' },
+      国語: { icon: '📝', color: 'bg-red-500', textColor: 'text-red-700' },
+      情報: { icon: '💻', color: 'bg-cyan-500', textColor: 'text-cyan-700' },
+      理科: { icon: '🧪', color: 'bg-purple-500', textColor: 'text-purple-700' },
+      理科1: { icon: '⚛️', color: 'bg-purple-500', textColor: 'text-purple-700' },
+      理科2: { icon: '🔬', color: 'bg-purple-600', textColor: 'text-purple-700' },
+      社会: { icon: '🌍', color: 'bg-orange-500', textColor: 'text-orange-700' },
+      社会1: { icon: '📚', color: 'bg-orange-500', textColor: 'text-orange-700' },
+      社会2: { icon: '🏛️', color: 'bg-orange-600', textColor: 'text-orange-700' }
     };
-    return colors[subject] || 'bg-gray-50 border-gray-200';
-  };
-
-  // 進捗バーの色を取得
-  const getProgressColor = (subject: Subject): string => {
-    const colors = {
-      数学: 'bg-blue-500',
-      英語: 'bg-green-500',
-      国語: 'bg-red-500',
-      情報: 'bg-cyan-500',
-      理科: 'bg-purple-500',
-      理科1: 'bg-purple-500',
-      理科2: 'bg-purple-600',
-      社会: 'bg-orange-500',
-      社会1: 'bg-orange-500',
-      社会2: 'bg-orange-600'
-    };
-    return colors[subject] || 'bg-gray-500';
+    return subjectMap[subject] || { icon: '📖', color: 'bg-gray-500', textColor: 'text-gray-700' };
   };
 
   const availableSubjects = getAvailableSubjects();
@@ -194,82 +176,160 @@ export function SubjectStudyTimeCard({ studyRecords, user }: SubjectStudyTimeCar
             <BookOpen className="w-5 h-5" />
             教科別学習時間
           </CardTitle>
-          <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodType)}>
-            <SelectTrigger className="w-32 h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERIOD_OPTIONS.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{option.label}</span>
-                    <span className="text-xs text-muted-foreground">{option.description}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-3">
+            <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodType)}>
+              <SelectTrigger className="w-28 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIOD_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-xs">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="text-xs text-muted-foreground">
+              合計: <span className="font-bold text-blue-600">{formatTime(totalTime)}</span>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {selectedOption?.description}の教科別学習時間（合計: {formatTime(totalTime)}）
-        </p>
       </CardHeader>
       <CardContent>
         {totalTime === 0 ? (
-          <div className="text-center py-8">
-            <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">
+          <div className="text-center py-6">
+            <BookOpen className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">
               {selectedOption?.description}の学習記録がありません
-            </p>
-            <p className="text-sm text-gray-400 mt-1">
-              学習を開始すると、ここに教科別の時間が表示されます
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {availableSubjects.map(subject => {
-              const minutes = subjectTimes[subject];
-              const percentage = maxTime > 0 ? (minutes / maxTime) * 100 : 0;
-              
-              return (
-                <div
-                  key={subject}
-                  className={`p-4 rounded-lg border-2 ${getSubjectColor(subject)} transition-all hover:shadow-sm`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">
-                        {getSubjectDisplayName(subject)}
-                      </span>
-                      {minutes === 0 && (
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          未学習
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-800">
-                        {formatTime(minutes)}
-                      </div>
-                      {totalTime > 0 && (
-                        <div className="text-xs text-gray-600">
-                          {Math.round((minutes / totalTime) * 100)}%
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {minutes > 0 && (
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+            {/* 積み上げ横棒グラフ */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-gray-700">学習時間比率</h4>
+              <div className="w-full bg-gray-200 rounded-full h-10 flex overflow-hidden">
+                {availableSubjects
+                  .filter(subject => subjectTimes[subject] > 0) // 学習済みの教科のみ
+                  .map((subject, index) => {
+                    const minutes = subjectTimes[subject];
+                    const percentage = totalTime > 0 ? (minutes / totalTime) * 100 : 0;
+                    const subjectInfo = getSubjectInfo(subject);
+                    
+                    return (
                       <div
-                        className={`h-2 rounded-full transition-all duration-500 ${getProgressColor(subject)}`}
+                        key={subject}
+                        className={`h-full ${subjectInfo.color} transition-all duration-500 flex items-center justify-center relative`}
                         style={{ width: `${percentage}%` }}
-                      />
+                      >
+                        {/* 教科名と％を常時表示（改行） */}
+                        {percentage > 8 && (
+                          <div className="text-white text-xs font-bold text-center px-1 leading-tight">
+                            <div className="truncate">{getSubjectDisplayName(subject)}</div>
+                            <div>{Math.round(percentage)}%</div>
+                          </div>
+                        )}
+                        {percentage > 4 && percentage <= 8 && (
+                          <div className="text-white text-xs font-bold text-center px-1 leading-tight">
+                            <div className="truncate text-xs">{getSubjectDisplayName(subject)}</div>
+                            <div className="text-xs">{Math.round(percentage)}%</div>
+                          </div>
+                        )}
+                        {percentage <= 4 && (
+                          <div className="text-white text-xs font-bold text-center px-0.5 leading-tight">
+                            <div className="truncate text-xs">{getSubjectDisplayName(subject)}</div>
+                            <div className="text-xs">{Math.round(percentage)}%</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+              
+              {/* 凡例表示（小さな領域の教科用） */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                {availableSubjects
+                  .filter(subject => subjectTimes[subject] > 0)
+                  .map(subject => {
+                    const minutes = subjectTimes[subject];
+                    const percentage = totalTime > 0 ? (minutes / totalTime) * 100 : 0;
+                    const subjectInfo = getSubjectInfo(subject);
+                    
+                    return (
+                      <div key={subject} className="flex items-center gap-1">
+                        <div className={`w-3 h-3 rounded-full ${subjectInfo.color}`}></div>
+                        <span className="text-gray-600">
+                          {getSubjectDisplayName(subject)} {Math.round(percentage)}%
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* 教科別詳細一覧 */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {availableSubjects.map(subject => {
+                const minutes = subjectTimes[subject];
+                const subjectInfo = getSubjectInfo(subject);
+                
+                return (
+                  <div
+                    key={subject}
+                    className="relative bg-white border rounded-lg p-3 hover:shadow-sm transition-all"
+                  >
+                    {/* 教科アイコンと名前 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{subjectInfo.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-xs font-medium ${subjectInfo.textColor} truncate`}>
+                          {getSubjectDisplayName(subject)}
+                        </div>
+                        <div className="text-sm text-gray-800 font-bold">
+                          {formatTime(minutes)}
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    {/* 未学習の場合 */}
+                    {minutes === 0 && (
+                      <div className="absolute inset-0 bg-gray-50 bg-opacity-80 rounded-lg flex items-center justify-center">
+                        <span className="text-xs text-gray-400 font-medium">未学習</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 統計サマリー（コンパクト版） */}
+        {totalTime > 0 && (
+          <div className="mt-4 pt-3 border-t">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-sm font-bold text-blue-600">
+                  {Math.round(totalTime / 60 * 10) / 10}h
                 </div>
-              );
-            })}
+                <div className="text-xs text-muted-foreground">総学習時間</div>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-green-600">
+                  {availableSubjects.filter(s => subjectTimes[s] > 0).length}科目
+                </div>
+                <div className="text-xs text-muted-foreground">学習済み</div>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-orange-600">
+                  {Math.round(totalTime / Math.max(availableSubjects.filter(s => subjectTimes[s] > 0).length, 1))}分
+                </div>
+                <div className="text-xs text-muted-foreground">科目平均</div>
+              </div>
+            </div>
           </div>
         )}
       </CardContent>
