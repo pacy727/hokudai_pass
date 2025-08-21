@@ -29,6 +29,13 @@ export function Header() {
   // 管理者用ナビゲーションアイテム
   const adminNavItems = user?.role === 'admin' ? [
     { 
+      path: '/admin/dashboard', 
+      icon: BarChart3, 
+      label: '管理ボード', 
+      emoji: '📝',
+      description: 'ユーザーの管理ボード'
+    },
+    { 
       path: '/admin/review-requests', 
       icon: MessageSquare, 
       label: '復習問題管理', 
