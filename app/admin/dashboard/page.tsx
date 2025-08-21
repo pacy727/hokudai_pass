@@ -277,13 +277,14 @@ export default function AdminDashboard() {
     }
   };
 
-  // 学習ストリーク計算
-  const calculateStudyStreak = (records: StudyRecord[]): number => {
+// 学習ストリーク計算（修正版）
+const calculateStudyStreak = (records: StudyRecord[]): number => {
     if (records.length === 0) return 0;
     
     const today = new Date();
-    let streak = 0;
-    let currentDate = new Date(today);
+    today.setHours(0, 0, 0, 0); // 今日の00:00:00
+    
+    let studyStreakCount = 0;
     
     // 日付ごとの学習記録をグループ化
     const recordsByDate = records.reduce((acc, record) => {
@@ -293,24 +294,48 @@ export default function AdminDashboard() {
       return acc;
     }, {} as Record<string, StudyRecord[]>);
 
-    // 今日から遡って連続学習日数をカウント
-    while (currentDate >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)) {
+    // 今日の学習状況をチェック
+    const todayStr = today.toISOString().split('T')[0];
+    const todayRecords = recordsByDate[todayStr] || [];
+    const todayTotal = todayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
+    const studiedToday = todayTotal >= 30;
+
+    // 昨日から遡って連続学習日数をカウント
+    let currentDate = new Date(today);
+    currentDate.setDate(currentDate.getDate() - 1); // 昨日から開始
+    
+    // 最大30日遡る
+    for (let i = 0; i < 30; i++) {
       const dateStr = currentDate.toISOString().split('T')[0];
       const dayRecords = recordsByDate[dateStr] || [];
       const dayTotal = dayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
       
-      if (dayTotal >= 30) { // 30分以上学習した日をカウント
-        streak++;
-      } else if (streak > 0) {
-        break; // 連続記録の途切れ
+      if (dayTotal >= 30) { // 30分以上学習した日
+        studyStreakCount++;
+      } else {
+        // 勉強していない日が来たら連続終了
+        break;
       }
       
+      // 前日に移動
       currentDate.setDate(currentDate.getDate() - 1);
     }
-    
-    return streak;
-  };
 
+    // 今日勉強した場合は+1、していない場合でも昨日まで連続していれば維持
+    if (studiedToday) {
+      studyStreakCount++; // 今日の分を追加
+      return studyStreakCount;
+    } else {
+      // 今日勉強していない場合
+      if (studyStreakCount > 0) {
+        // 昨日まで連続していれば、今日もまだ勉強する可能性があるので連続維持
+        return studyStreakCount;
+      } else {
+        // 昨日も勉強していない場合は0
+        return 0;
+      }
+    }
+  };
   // チャートデータ生成
   const generateChartData = (records: StudyRecord[]) => {
     const today = new Date();
@@ -461,6 +486,7 @@ export default function AdminDashboard() {
           </div>
           
           <div className="p-6 space-y-6">
+          <div className="p-6 space-y-6">
             {/* 基本情報 */}
             <Card>
               <CardHeader>
@@ -501,6 +527,131 @@ export default function AdminDashboard() {
               </Card>
             </div>
 
+            {/* 学習時間推移チャート */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-2">
+                    <BarChart3 className="h-5 w-5" />
+                    <span>学習時間推移</span>
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={studyPeriod === '7days' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setStudyPeriod('7days')}
+                    >
+                      7日間
+                    </Button>
+                    <Button
+                      variant={studyPeriod === '30days' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setStudyPeriod('30days')}
+                    >
+                      1か月
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  // ユーザー個別のチャートデータを生成
+                  const generateUserChartData = (userId: string, period: string) => {
+                    const today = new Date();
+                    const days = period === '7days' ? 7 : 30;
+                    const chartData = [];
+                    
+                    // ユーザーの学習記録をフィルタ
+                    const userRecords = studyRecords.filter(record => record.userId === userId);
+                    
+                    // 日付ごとの学習時間を集計
+                    const studyByDate: Record<string, number> = {};
+                    userRecords.forEach(record => {
+                      const date = record.studyDate;
+                      if (!studyByDate[date]) studyByDate[date] = 0;
+                      studyByDate[date] += (record.studyMinutes || 0) / 60; // 時間に変換
+                    });
+                    
+                    // 指定期間のデータを生成
+                    for (let i = days - 1; i >= 0; i--) {
+                      const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+                      const dateStr = date.toISOString().split('T')[0];
+                      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+                      const dayOfWeek = dayNames[date.getDay()];
+                      const shortDate = `${date.getMonth() + 1}/${date.getDate()}`;
+                      
+                      chartData.push({
+                        date: shortDate,
+                        value: studyByDate[dateStr] || 0,
+                        dateLabel: `${shortDate}(${dayOfWeek})`
+                      });
+                    }
+                    
+                    return chartData;
+                  };
+
+                  const userChartData = generateUserChartData(user.userId, studyPeriod);
+                  
+                  return (
+                    <div className="space-y-4">
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={userChartData}>
+                            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                            <XAxis 
+                              dataKey="date"
+                              tick={{ fontSize: 12 }}
+                              interval={studyPeriod === '30days' ? 4 : 0}
+                            />
+                            <YAxis 
+                              tick={{ fontSize: 12 }}
+                              label={{ value: '時間', angle: -90, position: 'insideLeft' }}
+                            />
+                            <Tooltip 
+                              labelFormatter={(label) => {
+                                const data = userChartData.find(d => d.date === label);
+                                return data ? data.dateLabel : label;
+                              }}
+                              formatter={(value) => [`${Number(value).toFixed(1)}時間`, '学習時間']}
+                            />
+                            <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      
+                      {/* 期間統計 */}
+                      <div className="grid grid-cols-4 gap-4 pt-3 border-t">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-blue-600">
+                            {userChartData.reduce((sum, day) => sum + day.value, 0).toFixed(1)}h
+                          </div>
+                          <div className="text-xs text-gray-500">{studyPeriod === '7days' ? '7日' : '30日'}合計</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-green-600">
+                            {userChartData.length > 0 ? (userChartData.reduce((sum, day) => sum + day.value, 0) / userChartData.length).toFixed(1) : '0.0'}h
+                          </div>
+                          <div className="text-xs text-gray-500">日平均</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-orange-600">
+                            {userChartData.length > 0 ? Math.max(...userChartData.map(d => d.value)).toFixed(1) : '0.0'}h
+                          </div>
+                          <div className="text-xs text-gray-500">最高記録</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-purple-600">
+                            {userChartData.filter(d => d.value > 0).length}
+                          </div>
+                          <div className="text-xs text-gray-500">学習日数</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
             {/* 復習統計 */}
             <Card>
               <CardHeader>
@@ -522,6 +673,7 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </div>
           </div>
         </div>
       </div>

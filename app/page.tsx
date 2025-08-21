@@ -154,6 +154,54 @@ export default function ReportPage() {
     return chartData;
   };
 
+  // const calculateStudyStreak = (records: StudyRecord[]) => {
+  //   if (records.length === 0) {
+  //     setStudyStreak(0);
+  //     setNoStudyStreak(1);
+  //     return;
+  //   }
+
+  //   const today = new Date();
+  //   let studyStreakCount = 0;
+  //   let noStudyStreakCount = 0;
+  //   let currentDate = new Date(today);
+    
+  //   // 日付ごとの学習記録をグループ化
+  //   const recordsByDate = records.reduce((acc, record) => {
+  //     const date = record.studyDate;
+  //     if (!acc[date]) acc[date] = [];
+  //     acc[date].push(record);
+  //     return acc;
+  //   }, {} as Record<string, StudyRecord[]>);
+
+  //   // 今日から遡って連続学習日数をカウント
+  //   let foundStudyDay = false;
+  //   while (currentDate >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)) { // 最大30日遡る
+  //     const dateStr = currentDate.toISOString().split('T')[0];
+  //     const dayRecords = recordsByDate[dateStr] || [];
+  //     const dayTotal = dayRecords.reduce((sum, r) => sum + r.studyMinutes, 0);
+      
+  //     if (dayTotal >= 0.5) { // 30分以上学習した日をカウント
+  //       if (!foundStudyDay) {
+  //         foundStudyDay = true;
+  //       }
+  //       studyStreakCount++;
+  //       noStudyStreakCount = 0; // 勉強した日があるのでリセット
+  //     } else {
+  //       if (foundStudyDay) {
+  //         break; // 勉強していた期間の途切れ
+  //       } else {
+  //         noStudyStreakCount++; // 最近勉強していない日数をカウント
+  //       }
+  //     }
+      
+  //     currentDate.setDate(currentDate.getDate() - 1);
+  //   }
+    
+  //   setStudyStreak(studyStreakCount);
+  //   setNoStudyStreak(foundStudyDay ? 0 : noStudyStreakCount);
+  // };
+
   const calculateStudyStreak = (records: StudyRecord[]) => {
     if (records.length === 0) {
       setStudyStreak(0);
@@ -162,9 +210,10 @@ export default function ReportPage() {
     }
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // 今日の00:00:00
+    
     let studyStreakCount = 0;
     let noStudyStreakCount = 0;
-    let currentDate = new Date(today);
     
     // 日付ごとの学習記録をグループ化
     const recordsByDate = records.reduce((acc, record) => {
@@ -174,33 +223,73 @@ export default function ReportPage() {
       return acc;
     }, {} as Record<string, StudyRecord[]>);
 
-    // 今日から遡って連続学習日数をカウント
-    let foundStudyDay = false;
-    while (currentDate >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)) { // 最大30日遡る
+    // 今日の学習状況をチェック
+    const todayStr = today.toISOString().split('T')[0];
+    const todayRecords = recordsByDate[todayStr] || [];
+    const todayTotal = todayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
+    const studiedToday = todayTotal >= 30;
+
+    // 昨日から遡って連続学習日数をカウント
+    let currentDate = new Date(today);
+    currentDate.setDate(currentDate.getDate() - 1); // 昨日から開始
+    
+    // 最大30日遡る
+    for (let i = 0; i < 30; i++) {
       const dateStr = currentDate.toISOString().split('T')[0];
       const dayRecords = recordsByDate[dateStr] || [];
-      const dayTotal = dayRecords.reduce((sum, r) => sum + r.studyMinutes, 0);
+      const dayTotal = dayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
       
-      if (dayTotal >= 0.5) { // 30分以上学習した日をカウント
-        if (!foundStudyDay) {
-          foundStudyDay = true;
-        }
+      if (dayTotal >= 30) { // 30分以上学習した日
         studyStreakCount++;
-        noStudyStreakCount = 0; // 勉強した日があるのでリセット
       } else {
-        if (foundStudyDay) {
-          break; // 勉強していた期間の途切れ
-        } else {
-          noStudyStreakCount++; // 最近勉強していない日数をカウント
-        }
+        // 勉強していない日が来たら連続終了
+        break;
       }
       
+      // 前日に移動
       currentDate.setDate(currentDate.getDate() - 1);
     }
-    
-    setStudyStreak(studyStreakCount);
-    setNoStudyStreak(foundStudyDay ? 0 : noStudyStreakCount);
+
+    // 今日勉強した場合は+1、していない場合でも昨日まで連続していれば維持
+    if (studiedToday) {
+      studyStreakCount++; // 今日の分を追加
+      setStudyStreak(studyStreakCount);
+      setNoStudyStreak(0);
+    } else {
+      // 今日勉強していない場合
+      if (studyStreakCount > 0) {
+        // 昨日まで連続していれば、今日もまだ勉強する可能性があるので連続維持
+        setStudyStreak(studyStreakCount);
+        setNoStudyStreak(0);
+      } else {
+        // 昨日も勉強していない場合、勉強していない日数をカウント
+        let noStudyDays = 1; // 今日勉強していない
+        
+        // 昨日から遡って勉強していない日数をカウント
+        let checkDate = new Date(today);
+        checkDate.setDate(checkDate.getDate() - 1);
+        
+        for (let i = 0; i < 30; i++) {
+          const dateStr = checkDate.toISOString().split('T')[0];
+          const dayRecords = recordsByDate[dateStr] || [];
+          const dayTotal = dayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
+          
+          if (dayTotal >= 30) {
+            break; // 勉強した日が見つかったら終了
+          } else {
+            noStudyDays++;
+          }
+          
+          checkDate.setDate(checkDate.getDate() - 1);
+        }
+        
+        setStudyStreak(0);
+        setNoStudyStreak(noStudyDays);
+      }
+    }
   };
+
+
 
   // 利用可能科目の取得
   const getAvailableSubjects = (): Subject[] => {
