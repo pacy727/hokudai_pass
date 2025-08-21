@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { StudyRecordService } from '@/lib/db/studyRecords';
 import { ReviewService } from '@/lib/db/reviewService';
 import { SubjectButton } from '@/components/SubjectButton';
+import { SubjectStudyTimeCard } from '@/components/SubjectStudyTimeCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -14,9 +15,6 @@ import { TodayTask } from '@/types/review';
 import { useRouter } from 'next/navigation';
 import { Clock, Target, BookOpen, Flame, Calendar, TrendingUp, AlertTriangle, Trophy, BarChart3 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-// 直近10日間の学習時間データ（ダミー）
-// 削除：実際のデータベースから取得するため不要
 
 export default function ReportPage() {
   const { user, isLoading } = useAuth();
@@ -155,6 +153,7 @@ export default function ReportPage() {
     
     return chartData;
   };
+
   const calculateStudyStreak = (records: StudyRecord[]) => {
     if (records.length === 0) {
       setStudyStreak(0);
@@ -293,22 +292,6 @@ export default function ReportPage() {
         </Card>
       )}
 
-      {/* ヘッダー */}
-      {/* <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">
-            🎯 北大専科 - 学習管理
-          </CardTitle>
-          <p className="text-center text-muted-foreground">
-            こんにちは、{user.displayName}さん！
-            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-              {user.course === 'liberal' ? '📚 文系' : '🔬 理系'}
-            </span>
-          </p>
-        </CardHeader>
-      </Card> */}
-
-
       {/* 励ましメッセージ */}
       <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
         <CardContent className="pt-6">
@@ -373,8 +356,6 @@ export default function ReportPage() {
           </CardContent>
         </Card>
       )}
-
-
 
       {/* 今週の目標と学習ストリーク */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -544,6 +525,12 @@ export default function ReportPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 教科別学習時間 */}
+      <SubjectStudyTimeCard 
+        studyRecords={recentRecords.length > 0 ? recentRecords : []}
+        user={user}
+      />
 
       {/* 総学習時間と達成度 */}
       <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
