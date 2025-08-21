@@ -26,6 +26,11 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // 許可されたドメインの確認
+  const isValidDomain = (email: string): boolean => {
+    return email.endsWith('@obihiro-ohtani.ed.jp');
+  };
+
   // フォームリセット
   const resetForm = () => {
     setEmail('');
@@ -55,18 +60,36 @@ export default function AuthPage() {
       return;
     }
 
+    if (!isValidDomain(email)) {
+      toast({
+        title: "ドメインエラー",
+        description: "@obihiro-ohtani.ed.jp のメールアドレスのみ使用できます",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsLoading(true);
     
     try {
+      console.log('🔐 Starting login process for:', email);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('✅ Login successful for:', userCredential.user.email);
       
       toast({
         title: "ログイン成功！",
         description: `ようこそ、${userCredential.user.email}さん！`
       });
       
-      router.push('/');
+      // 少し待ってからリダイレクト
+      setTimeout(() => {
+        console.log('🔄 Redirecting to home page');
+        router.replace('/');
+        router.refresh();
+      }, 1000);
+      
     } catch (error: any) {
+      console.error('❌ Login error:', error);
       let errorMessage = "ログインに失敗しました";
       switch (error.code) {
         case 'auth/user-not-found':
@@ -81,8 +104,11 @@ export default function AuthPage() {
         case 'auth/too-many-requests':
           errorMessage = "試行回数が多すぎます。しばらく時間をおいてお試しください";
           break;
+        case 'auth/invalid-credential':
+          errorMessage = "メールアドレスまたはパスワードが間違っています";
+          break;
         default:
-          errorMessage = `${error.code}: ${error.message}`;
+          errorMessage = `ログインエラー: ${error.message}`;
       }
       
       toast({
@@ -103,6 +129,15 @@ export default function AuthPage() {
       toast({
         title: "入力エラー",
         description: "すべての項目を入力してください",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isValidDomain(email)) {
+      toast({
+        title: "ドメインエラー",
+        description: "@obihiro-ohtani.ed.jp のメールアドレスのみ使用できます",
         variant: "destructive"
       });
       return;
@@ -129,8 +164,11 @@ export default function AuthPage() {
     setIsLoading(true);
     
     try {
+      console.log('📝 Starting registration process for:', email);
+      
       // Firebase Authでアカウント作成
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      console.log('✅ Account created for:', userCredential.user.email);
       
       // Firestoreにユーザー情報を保存
       await setDoc(doc(db, collections.users, userCredential.user.uid), {
@@ -138,9 +176,9 @@ export default function AuthPage() {
         email: userCredential.user.email,
         displayName: displayName,
         role: 'student',
-        grade: grade, // 学年を追加
+        grade: grade,
         targetUniversity: '北海道大学',
-        course: course, // コースを追加
+        course: course,
         weeklyTarget: 56,
         customSubjects: {},
         subjectSelection: {},
@@ -165,13 +203,22 @@ export default function AuthPage() {
         createdAt: new Date()
       });
       
+      console.log('💾 User data saved to Firestore');
+      
       toast({
         title: "アカウント作成成功！",
         description: `ようこそ、${displayName}さん！学習を始めましょう！`
       });
       
-      router.push('/');
+      // 少し待ってからリダイレクト
+      setTimeout(() => {
+        console.log('🔄 Redirecting to home page after registration');
+        router.replace('/');
+        router.refresh();
+      }, 1000);
+      
     } catch (error: any) {
+      console.error('❌ Registration error:', error);
       let errorMessage = "アカウント作成に失敗しました";
       switch (error.code) {
         case 'auth/email-already-in-use':
@@ -200,19 +247,12 @@ export default function AuthPage() {
     }
   };
 
-  // デモアカウント設定
-  const setDemoAccount = () => {
-    setEmail('demo@hokudai-tracker.com');
-    setPassword('demo123456');
-    setIsLogin(true);
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
-            🎯 北大専科
+            🎯 大谷塾
           </CardTitle>
           <p className="text-muted-foreground">
             {isLogin ? 'ログイン' : '新規アカウント作成'}
@@ -298,10 +338,13 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="example@email.com"
+                placeholder="example@obihiro-ohtani.ed.jp"
                 required
                 className="h-12"
               />
+              <p className="text-xs text-muted-foreground">
+                @obihiro-ohtani.ed.jp のメールアドレスのみ使用できます
+              </p>
             </div>
             
             {/* パスワード */}
@@ -391,32 +434,6 @@ export default function AuthPage() {
             >
               {isLogin ? '新規アカウント作成はこちら' : 'ログインはこちら'}
             </Button>
-          </div>
-
-          {/* デモアカウント（ログイン時のみ） */}
-          {isLogin && (
-            <div className="mt-4">
-              <Button
-                variant="outline"
-                onClick={setDemoAccount}
-                className="w-full"
-                disabled={isLoading}
-              >
-                🎮 デモアカウント情報を入力
-              </Button>
-            </div>
-          )}
-
-          {/* 機能説明 */}
-          <div className="mt-6 space-y-2 text-sm text-muted-foreground">
-            <h4 className="font-semibold text-foreground">🚀 システムの特徴</h4>
-            <ul className="space-y-1">
-              <li>• ⏱️ タイマー機能で正確な学習時間記録</li>
-              <li>• 📊 詳細な学習分析とレポート</li>
-              <li>• 👥 メンバーとの学習状況共有</li>
-              <li>• 🎯 偏差値50→65確実達成サポート</li>
-              <li>• 🏫 学年別ランキングとチャート</li>
-            </ul>
           </div>
         </CardContent>
       </Card>
