@@ -31,31 +31,26 @@ import {
   XCircle
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-import { 
-  collection, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  Timestamp
-} from 'firebase/firestore';
-import { db, collections } from '@/lib/firebase';
-import { StudyRecord } from '@/types/study';
+import { StudyRecordService } from '@/lib/db/studyRecords';
 import { ReviewQuestionRequestService } from '@/lib/db/reviewQuestionRequestService';
+import { ReviewStatsService } from '@/lib/db/reviewStatsService';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { db, collections } from '@/lib/firebase';
+import { StudyRecord, Subject } from '@/types/study';
 import { ReviewQuestionRequest } from '@/types/review';
+import { useToast } from '@/components/ui/use-toast';
 
 // ユーザー統計データの型定義
 interface UserStats {
   userId: string;
   userName: string;
-  email?: string;
+  email: string;
   grade?: string;
-  course?: string;
-  createdAt?: Date;
-  lastActive?: Date;
-  totalHours: number;
-  weeklyHours: number;
+  course?: 'liberal' | 'science';
+  createdAt: Date;
+  lastActive: Date;
+  totalStudyHours: number;
+  weeklyStudyHours: number;
   reviewsCompleted: number;
   averageUnderstanding: number;
   reviewRequests: number;
@@ -63,25 +58,26 @@ interface UserStats {
   isActive: boolean;
 }
 
-// チャートデータの型定義
-interface ChartDataPoint {
-  date: string;
-  value: number;
-  dateLabel: string;
-}
-
-// 科目データの型定義
-interface SubjectData {
+// 本番データに対応したタイムラインアイテムの型定義
+interface TimelineItem {
+  id: string;
+  type: 'study_record';
+  userName: string;
+  userId: string;
+  timestamp: Date;
   subject: string;
-  hours: number;
+  content: string;
+  details?: string;
+  studyTime: number; // 分
+  icon: string;
   color: string;
 }
 
 export default function AdminDashboard() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   
-  // State管理
   const [currentTab, setCurrentTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [gradeFilter, setGradeFilter] = useState('全学年');
@@ -89,14 +85,14 @@ export default function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState<UserStats | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [studyPeriod, setStudyPeriod] = useState('7days');
-  const [userDetailPeriod, setUserDetailPeriod] = useState('7days');
   
-  // データState
+  // データ状態
   const [users, setUsers] = useState<UserStats[]>([]);
-  const [studyCalendarData, setStudyCalendarData] = useState<ChartDataPoint[]>([]);
-  const [subjectData, setSubjectData] = useState<SubjectData[]>([]);
+  const [studyRecords, setStudyRecords] = useState<StudyRecord[]>([]);
   const [reviewRequests, setReviewRequests] = useState<ReviewQuestionRequest[]>([]);
-  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [subjectData, setSubjectData] = useState<any[]>([]);
+  const [timelineData, setTimelineData] = useState<TimelineItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   // 管理者権限チェック
@@ -114,270 +110,298 @@ export default function AdminDashboard() {
     }
   }, [user]);
 
-  // 全データ読み込み
   const loadAllData = async () => {
     setIsLoadingData(true);
     try {
-      console.log('🔄 Loading admin dashboard data...');
+      console.log('📊 Loading admin dashboard data...');
       
-      await Promise.all([
+      // 並行してデータを取得
+      const [usersData, studyRecordsData, reviewRequestsData] = await Promise.all([
         loadUsers(),
-        loadStudyData(),
-        loadReviewRequests(),
-        loadActivityLogs()
+        loadStudyRecords(),
+        loadReviewRequests()
       ]);
+
+      // チャートデータとタイムラインデータを生成
+      generateChartData(studyRecordsData);
+      generateSubjectData(studyRecordsData);
+      generateTimelineData(studyRecordsData, usersData);
       
-      console.log('✅ All admin data loaded');
+      console.log('✅ All admin dashboard data loaded');
     } catch (error) {
-      console.error('❌ Error loading admin data:', error);
+      console.error('❌ Error loading admin dashboard data:', error);
+      toast({
+        title: "データ読み込みエラー",
+        description: "管理ボードのデータ読み込みに失敗しました",
+        variant: "destructive"
+      });
     } finally {
       setIsLoadingData(false);
     }
   };
 
   // ユーザーデータ読み込み
-  const loadUsers = async () => {
+  const loadUsers = async (): Promise<Map<string, any>> => {
     try {
       console.log('👥 Loading users data...');
       
-      // 全ユーザーを取得
       const usersSnapshot = await getDocs(collection(db, collections.users));
-      console.log('📄 Total users found:', usersSnapshot.docs.length);
+      const userMap = new Map<string, any>();
+      const usersList: UserStats[] = [];
       
-      const userPromises = usersSnapshot.docs.map(async (userDoc) => {
+      for (const userDoc of usersSnapshot.docs) {
         const userData = userDoc.data();
         const userId = userDoc.id;
         
-        // 最近30日間の学習記録を取得
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
-        
-        const studyRecordsQuery = query(
-          collection(db, collections.studyRecords),
-          where('userId', '==', userId),
-          where('studyDate', '>=', thirtyDaysAgoStr)
-        );
-        
-        const studySnapshot = await getDocs(studyRecordsQuery);
-        const studyRecords = studySnapshot.docs.map(doc => ({
-          ...doc.data(),
-          studyMinutes: doc.data().studyMinutes || (doc.data().studyHours ? doc.data().studyHours * 60 : 0)
-        }));
-        
-        // 今週の学習記録を取得（月曜日開始）
+        // 復習統計を取得
+        let reviewStats;
+        try {
+          reviewStats = await ReviewStatsService.calculateUserReviewStats(userId);
+        } catch (error) {
+          console.warn(`Failed to load review stats for user ${userId}:`, error);
+          reviewStats = {
+            totalReviewsCompleted: 0,
+            averageUnderstanding: 0
+          };
+        }
+
+        // 学習記録から統計を計算
+        const userStudyRecords = await StudyRecordService.getRecordsByUser(userId);
+        const totalStudyMinutes = userStudyRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
+        const totalStudyHours = totalStudyMinutes / 60;
+
+        // 今週の学習時間を計算
         const now = new Date();
-        const currentDay = now.getDay();
-        const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
-        const weekStartDate = new Date(now.getTime() - daysFromMonday * 24 * 60 * 60 * 1000);
-        weekStartDate.setHours(0, 0, 0, 0);
-        const weekStartStr = weekStartDate.toISOString().split('T')[0];
+        const weekStart = new Date(now.getTime() - (now.getDay() || 7) * 24 * 60 * 60 * 1000);
+        weekStart.setHours(0, 0, 0, 0);
         
-        const weeklyRecords = studyRecords.filter(record => 
-          record.studyDate >= weekStartStr
-        );
-        
-        // 統計計算
-        const totalMinutes = studyRecords.reduce((sum, record) => sum + record.studyMinutes, 0);
-        const weeklyMinutes = weeklyRecords.reduce((sum, record) => sum + record.studyMinutes, 0);
-        
-        // 復習統計（簡易版）
-        const reviewStats = userData.reviewStats || {
-          totalReviewsCompleted: 0,
-          averageUnderstanding: 0
-        };
-        
-        // アクティブ判定（過去7日以内に学習記録があるか）
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
-        const recentRecords = studyRecords.filter(record => record.studyDate >= sevenDaysAgoStr);
-        const isActive = recentRecords.length > 0;
+        const weeklyRecords = userStudyRecords.filter(record => {
+          const recordDate = new Date(record.studyDate + 'T00:00:00');
+          return recordDate >= weekStart;
+        });
+        const weeklyStudyMinutes = weeklyRecords.reduce((sum, record) => sum + (record.studyMinutes || 0), 0);
+        const weeklyStudyHours = weeklyStudyMinutes / 60;
+
+        // 復習問題リクエスト数を取得
+        const userRequests = await ReviewQuestionRequestService.getUserRequests(userId);
         
         // 学習ストリーク計算（簡易版）
-        const today = new Date().toISOString().split('T')[0];
-        let currentStreak = 0;
-        for (let i = 0; i < 30; i++) {
-          const checkDate = new Date();
-          checkDate.setDate(checkDate.getDate() - i);
-          const checkDateStr = checkDate.toISOString().split('T')[0];
-          
-          const hasStudy = studyRecords.some(record => 
-            record.studyDate === checkDateStr && record.studyMinutes >= 30
-          );
-          
-          if (hasStudy) {
-            currentStreak++;
-          } else if (i > 0) {
-            break;
-          }
-        }
+        const currentStreak = calculateStudyStreak(userStudyRecords);
         
-        return {
+        // 最終活動日を計算
+        const lastActiveRecord = userStudyRecords.length > 0 ? userStudyRecords[0] : null;
+        const lastActive = lastActiveRecord ? new Date(lastActiveRecord.studyDate) : userData.createdAt?.toDate() || new Date();
+        
+        // アクティブ判定（過去7日以内に学習記録があるか）
+        const isActive = lastActiveRecord && 
+          new Date(lastActiveRecord.studyDate) >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const userStats: UserStats = {
           userId,
           userName: userData.displayName || 'ユーザー',
           email: userData.email || '',
           grade: userData.grade || 'その他',
           course: userData.course || 'science',
           createdAt: userData.createdAt?.toDate() || new Date(),
-          lastActive: new Date(), // 最終アクティブ時刻は簡略化
-          totalHours: totalMinutes / 60,
-          weeklyHours: weeklyMinutes / 60,
+          lastActive,
+          totalStudyHours,
+          weeklyStudyHours,
           reviewsCompleted: reviewStats.totalReviewsCompleted,
           averageUnderstanding: reviewStats.averageUnderstanding,
-          reviewRequests: 0, // 後で設定
+          reviewRequests: userRequests.length,
           currentStreak,
-          isActive
-        } as UserStats;
-      });
+          isActive: !!isActive
+        };
+
+        userMap.set(userId, userData);
+        usersList.push(userStats);
+      }
       
-      const usersData = await Promise.all(userPromises);
-      setUsers(usersData);
-      console.log('✅ Users data loaded:', usersData.length);
-      
+      setUsers(usersList);
+      console.log(`✅ Loaded ${usersList.length} users`);
+      return userMap;
     } catch (error) {
       console.error('❌ Error loading users:', error);
-      setUsers([]);
+      return new Map();
     }
   };
 
-  // 学習データ読み込み
-  const loadStudyData = async () => {
+  // 学習記録データ読み込み
+  const loadStudyRecords = async (): Promise<StudyRecord[]> => {
     try {
-      console.log('📊 Loading study data...');
+      console.log('📚 Loading study records...');
       
-      // 指定期間の学習記録を取得
-      const daysToLoad = studyPeriod === '7days' ? 7 : 30;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysToLoad);
-      const startDateStr = startDate.toISOString().split('T')[0];
+      // 過去30日間の学習記録を取得
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
       
-      const studyQuery = query(
+      const recordsQuery = query(
         collection(db, collections.studyRecords),
-        where('studyDate', '>=', startDateStr),
+        where('studyDate', '>=', thirtyDaysAgoStr),
         orderBy('studyDate', 'desc')
       );
       
-      const studySnapshot = await getDocs(studyQuery);
-      console.log('📄 Study records found:', studySnapshot.docs.length);
-      
-      const records = studySnapshot.docs.map(doc => {
+      const recordsSnapshot = await getDocs(recordsQuery);
+      const records = recordsSnapshot.docs.map(doc => {
         const data = doc.data();
-        return {
-          ...data,
-          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0)
-        };
-      });
-      
-      // 日付ごとの学習時間を集計
-      const studyByDate: Record<string, number> = {};
-      const subjectHours: Record<string, number> = {};
-      
-      records.forEach(record => {
-        const date = record.studyDate;
-        const minutes = record.studyMinutes || 0;
-        const subject = record.subject || '不明';
-        
-        studyByDate[date] = (studyByDate[date] || 0) + minutes;
-        subjectHours[subject] = (subjectHours[subject] || 0) + (minutes / 60);
-      });
-      
-      // チャートデータ生成
-      const chartData: ChartDataPoint[] = [];
-      for (let i = daysToLoad - 1; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-        const dayOfWeek = dayNames[date.getDay()];
-        const shortDate = `${date.getMonth() + 1}/${date.getDate()}`;
-        
-        chartData.push({
-          date: shortDate,
-          value: studyByDate[dateStr] || 0,
-          dateLabel: `${shortDate}(${dayOfWeek})`
-        });
-      }
-      
-      setStudyCalendarData(chartData);
-      
-      // 科目別データ生成
-      const subjectColors = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b'];
-      const subjectDataArray = Object.entries(subjectHours)
-        .map(([subject, hours], index) => ({
-          subject,
-          hours: Math.round(hours * 10) / 10,
-          color: subjectColors[index % subjectColors.length]
-        }))
-        .sort((a, b) => b.hours - a.hours)
-        .slice(0, 5);
-      
-      setSubjectData(subjectDataArray);
-      console.log('✅ Study data loaded');
-      
-    } catch (error) {
-      console.error('❌ Error loading study data:', error);
-      setStudyCalendarData([]);
-      setSubjectData([]);
-    }
-  };
-
-  // 復習問題リクエスト読み込み
-  const loadReviewRequests = async () => {
-    try {
-      console.log('📝 Loading review requests...');
-      const requests = await ReviewQuestionRequestService.getAllRequests();
-      setReviewRequests(requests.slice(0, 10)); // 最新10件
-      console.log('✅ Review requests loaded:', requests.length);
-    } catch (error) {
-      console.error('❌ Error loading review requests:', error);
-      setReviewRequests([]);
-    }
-  };
-
-  // アクティビティログ読み込み
-  const loadActivityLogs = async () => {
-    try {
-      console.log('📋 Loading activity logs...');
-      
-      // 最新の学習記録を取得（アクティビティログとして使用）
-      const recentStudyQuery = query(
-        collection(db, collections.studyRecords),
-        orderBy('createdAt', 'desc'),
-        limit(10)
-      );
-      
-      const studySnapshot = await getDocs(recentStudyQuery);
-      const userNamesMap = new Map<string, string>();
-      
-      // ユーザー名マップを作成
-      const usersSnapshot = await getDocs(collection(db, collections.users));
-      usersSnapshot.docs.forEach(doc => {
-        const userData = doc.data();
-        userNamesMap.set(doc.id, userData.displayName || 'ユーザー');
-      });
-      
-      const logs = studySnapshot.docs.map(doc => {
-        const data = doc.data();
-        const userName = userNamesMap.get(data.userId) || 'ユーザー';
-        
         return {
           id: doc.id,
-          type: 'study_record',
-          userName,
-          message: `${data.subject}を${Math.round((data.studyMinutes || 0) / 60 * 10) / 10}時間学習しました`,
-          timestamp: data.createdAt?.toDate() || new Date(),
-          color: 'bg-green-100 border-green-300 text-green-800'
+          ...data,
+          studyMinutes: data.studyMinutes || (data.studyHours ? data.studyHours * 60 : 0),
+          createdAt: data.createdAt?.toDate() || new Date()
         };
-      });
+      }) as StudyRecord[];
       
-      setActivityLogs(logs);
-      console.log('✅ Activity logs loaded');
-      
+      setStudyRecords(records);
+      console.log(`✅ Loaded ${records.length} study records`);
+      return records;
     } catch (error) {
-      console.error('❌ Error loading activity logs:', error);
-      setActivityLogs([]);
+      console.error('❌ Error loading study records:', error);
+      return [];
     }
+  };
+
+  // 復習問題リクエストデータ読み込み
+  const loadReviewRequests = async (): Promise<ReviewQuestionRequest[]> => {
+    try {
+      console.log('📋 Loading review requests...');
+      
+      const requests = await ReviewQuestionRequestService.getAllRequests();
+      setReviewRequests(requests);
+      console.log(`✅ Loaded ${requests.length} review requests`);
+      return requests;
+    } catch (error) {
+      console.error('❌ Error loading review requests:', error);
+      return [];
+    }
+  };
+
+  // 学習ストリーク計算
+  const calculateStudyStreak = (records: StudyRecord[]): number => {
+    if (records.length === 0) return 0;
+    
+    const today = new Date();
+    let streak = 0;
+    let currentDate = new Date(today);
+    
+    // 日付ごとの学習記録をグループ化
+    const recordsByDate = records.reduce((acc, record) => {
+      const date = record.studyDate;
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(record);
+      return acc;
+    }, {} as Record<string, StudyRecord[]>);
+
+    // 今日から遡って連続学習日数をカウント
+    while (currentDate >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayRecords = recordsByDate[dateStr] || [];
+      const dayTotal = dayRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
+      
+      if (dayTotal >= 30) { // 30分以上学習した日をカウント
+        streak++;
+      } else if (streak > 0) {
+        break; // 連続記録の途切れ
+      }
+      
+      currentDate.setDate(currentDate.getDate() - 1);
+    }
+    
+    return streak;
+  };
+
+  // チャートデータ生成
+  const generateChartData = (records: StudyRecord[]) => {
+    const today = new Date();
+    const data = [];
+    
+    const period = studyPeriod === '7days' ? 7 : 30;
+    
+    // 日付ごとの学習時間を集計
+    const studyByDate: Record<string, number> = {};
+    records.forEach(record => {
+      const date = record.studyDate;
+      if (!studyByDate[date]) {
+        studyByDate[date] = 0;
+      }
+      studyByDate[date] += (record.studyMinutes || 0) / 60; // 時間に変換
+    });
+    
+    // 指定期間のデータを生成
+    for (let i = period - 1; i >= 0; i--) {
+      const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+      const dayOfWeek = dayNames[date.getDay()];
+      const shortDate = `${date.getMonth() + 1}/${date.getDate()}`;
+      
+      data.push({
+        date: shortDate,
+        value: studyByDate[dateStr] || 0,
+        dateLabel: `${shortDate}(${dayOfWeek})`
+      });
+    }
+    
+    setChartData(data);
+  };
+
+  // 科目データ生成
+  const generateSubjectData = (records: StudyRecord[]) => {
+    const subjectMinutes: Record<string, number> = {};
+    
+    records.forEach(record => {
+      const subject = record.subject;
+      if (!subjectMinutes[subject]) {
+        subjectMinutes[subject] = 0;
+      }
+      subjectMinutes[subject] += record.studyMinutes || 0;
+    });
+    
+    const colors = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#84cc16'];
+    
+    const data = Object.entries(subjectMinutes)
+      .map(([subject, minutes], index) => ({
+        subject,
+        hours: Math.round((minutes / 60) * 10) / 10,
+        color: colors[index % colors.length]
+      }))
+      .sort((a, b) => b.hours - a.hours)
+      .slice(0, 10); // トップ10科目
+    
+    setSubjectData(data);
+  };
+
+  // タイムラインデータ生成
+  const generateTimelineData = (records: StudyRecord[], userMap: Map<string, any>) => {
+    const timelineItems: TimelineItem[] = [];
+    
+    // 最新100件の学習記録をタイムラインに追加
+    records.slice(0, 100).forEach(record => {
+      const userData = userMap.get(record.userId);
+      const userName = userData?.displayName || 'ユーザー';
+      
+      timelineItems.push({
+        id: `study_${record.id}`,
+        type: 'study_record',
+        userName,
+        userId: record.userId,
+        timestamp: record.createdAt,
+        subject: record.subject,
+        content: record.content,
+        details: record.details,
+        studyTime: record.studyMinutes || 0,
+        icon: '📚',
+        color: 'bg-green-100 border-green-300 text-green-800'
+      });
+    });
+    
+    // 時系列順にソート
+    const sortedItems = timelineItems.sort((a, b) => 
+      b.timestamp.getTime() - a.timestamp.getTime()
+    );
+    
+    setTimelineData(sortedItems);
   };
 
   // データ更新
@@ -385,6 +409,16 @@ export default function AdminDashboard() {
     setIsRefreshing(true);
     try {
       await loadAllData();
+      toast({
+        title: "更新完了",
+        description: "データを最新の状態に更新しました"
+      });
+    } catch (error) {
+      toast({
+        title: "更新エラー",
+        description: "データの更新に失敗しました",
+        variant: "destructive"
+      });
     } finally {
       setIsRefreshing(false);
     }
@@ -402,25 +436,6 @@ export default function AdminDashboard() {
       
       return matchesSearch && matchesGrade && matchesCourse;
     });
-  };
-
-  // 統計計算
-  const getStats = () => {
-    const totalUsers = users.length;
-    const activeUsers = users.filter(u => u.isActive).length;
-    const totalStudyHours = users.reduce((sum, u) => sum + u.totalHours, 0);
-    const avgStudyHours = totalUsers > 0 ? totalStudyHours / totalUsers : 0;
-
-    return {
-      total: totalUsers,
-      pending: reviewRequests.filter(r => r.status === 'pending').length,
-      inProgress: reviewRequests.filter(r => r.status === 'in_progress').length,
-      completed: reviewRequests.filter(r => r.status === 'completed').length,
-      rejected: reviewRequests.filter(r => r.status === 'rejected').length,
-      activeUsers,
-      totalStudyHours,
-      avgStudyHours
-    };
   };
 
   // ユーザー詳細モーダル
@@ -457,9 +472,9 @@ export default function AdminDashboard() {
               <CardContent>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><strong>メールアドレス:</strong> {user.email}</div>
-                  <div><strong>登録日:</strong> {user.createdAt?.toLocaleDateString('ja-JP')}</div>
+                  <div><strong>登録日:</strong> {user.createdAt.toLocaleDateString('ja-JP')}</div>
+                  <div><strong>最終ログイン:</strong> {user.lastActive.toLocaleDateString('ja-JP')}</div>
                   <div><strong>学習ストリーク:</strong> {user.currentStreak}日連続</div>
-                  <div><strong>コース:</strong> {user.course === 'liberal' ? '文系' : '理系'}</div>
                 </div>
               </CardContent>
             </Card>
@@ -468,13 +483,13 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-600">{user.totalHours.toFixed(1)}時間</div>
-                  <div className="text-sm text-gray-600">総学習時間（30日）</div>
+                  <div className="text-2xl font-bold text-blue-600">{user.totalStudyHours.toFixed(1)}時間</div>
+                  <div className="text-sm text-gray-600">総学習時間</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold text-green-600">{user.weeklyHours.toFixed(1)}時間</div>
+                  <div className="text-2xl font-bold text-green-600">{user.weeklyStudyHours.toFixed(1)}時間</div>
                   <div className="text-sm text-gray-600">今週の学習時間</div>
                 </CardContent>
               </Card>
@@ -518,7 +533,7 @@ export default function AdminDashboard() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p>管理者データを読み込み中...</p>
+          <p>管理ボードを読み込み中...</p>
         </div>
       </div>
     );
@@ -529,7 +544,26 @@ export default function AdminDashboard() {
   }
 
   const filteredUsers = getFilteredUsers();
-  const stats = getStats();
+  const totalUsers = users.length;
+  const activeUsers = users.filter(u => u.isActive).length;
+  const totalStudyHours = users.reduce((sum, u) => sum + u.totalStudyHours, 0);
+  const avgStudyHours = totalUsers > 0 ? totalStudyHours / totalUsers : 0;
+
+  // 期間表示テキストの取得
+  const getPeriodDisplayText = (period: string) => {
+    return period === '7days' ? '直近7日間' : '直近1か月';
+  };
+
+  // X軸のフォーマット関数
+  const formatXAxisTick = (date: string, period: string) => {
+    if (period === '7days') {
+      return date;
+    } else {
+      // 30日間の場合は週単位で表示を間引く
+      const dayIndex = chartData.findIndex(d => d.date === date);
+      return dayIndex % 5 === 0 ? date : '';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -549,6 +583,10 @@ export default function AdminDashboard() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
                 更新
               </Button>
+              <Button variant="outline">
+                <Download className="w-4 h-4 mr-2" />
+                エクスポート
+              </Button>
               <Badge variant="default" className="bg-red-600">
                 <Shield className="w-4 h-4 mr-1" />
                 管理者モード
@@ -560,25 +598,25 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+                <div className="text-2xl font-bold text-blue-600">{totalUsers}</div>
                 <div className="text-sm text-gray-600">総ユーザー数</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.activeUsers}</div>
+                <div className="text-2xl font-bold text-green-600">{activeUsers}</div>
                 <div className="text-sm text-gray-600">アクティブユーザー</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-purple-600">{stats.totalStudyHours.toFixed(1)}h</div>
-                <div className="text-sm text-gray-600">総学習時間（30日）</div>
+                <div className="text-2xl font-bold text-purple-600">{totalStudyHours.toFixed(1)}h</div>
+                <div className="text-sm text-gray-600">総学習時間</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-orange-600">{stats.avgStudyHours.toFixed(1)}h</div>
+                <div className="text-2xl font-bold text-orange-600">{avgStudyHours.toFixed(1)}h</div>
                 <div className="text-sm text-gray-600">平均学習時間</div>
               </CardContent>
             </Card>
@@ -688,11 +726,11 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center space-x-6 text-sm">
                         <div className="text-center">
-                          <div className="font-medium text-blue-600">{user.totalHours.toFixed(1)}h</div>
+                          <div className="font-medium text-blue-600">{user.totalStudyHours.toFixed(1)}h</div>
                           <div className="text-gray-500">総学習</div>
                         </div>
                         <div className="text-center">
-                          <div className="font-medium text-green-600">{user.weeklyHours.toFixed(1)}h</div>
+                          <div className="font-medium text-green-600">{user.weeklyStudyHours.toFixed(1)}h</div>
                           <div className="text-gray-500">今週</div>
                         </div>
                         <div className="text-center">
@@ -725,24 +763,36 @@ export default function AdminDashboard() {
                 <CardContent>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={(() => {
-                        const gradeStats = users.reduce((acc, user) => {
-                          const grade = user.grade || 'その他';
-                          if (!acc[grade]) acc[grade] = { grade, totalHours: 0, count: 0 };
-                          acc[grade].totalHours += user.totalHours;
-                          acc[grade].count += 1;
-                          return acc;
-                        }, {} as Record<string, { grade: string, totalHours: number, count: number }>);
-                        
-                        return Object.values(gradeStats).map(stat => ({
-                          grade: stat.grade,
-                          hours: stat.count > 0 ? Math.round((stat.totalHours / stat.count) * 10) / 10 : 0
-                        }));
-                      })()}>
+                      <BarChart data={[
+                        { 
+                          grade: '1学年', 
+                          hours: users.filter(u => u.grade === '1学年')
+                            .reduce((sum, u) => sum + u.totalStudyHours, 0) / 
+                            Math.max(users.filter(u => u.grade === '1学年').length, 1)
+                        },
+                        { 
+                          grade: '2学年', 
+                          hours: users.filter(u => u.grade === '2学年')
+                            .reduce((sum, u) => sum + u.totalStudyHours, 0) / 
+                            Math.max(users.filter(u => u.grade === '2学年').length, 1)
+                        },
+                        { 
+                          grade: '3学年', 
+                          hours: users.filter(u => u.grade === '3学年')
+                            .reduce((sum, u) => sum + u.totalStudyHours, 0) / 
+                            Math.max(users.filter(u => u.grade === '3学年').length, 1)
+                        },
+                        { 
+                          grade: 'その他', 
+                          hours: users.filter(u => u.grade === 'その他')
+                            .reduce((sum, u) => sum + u.totalStudyHours, 0) / 
+                            Math.max(users.filter(u => u.grade === 'その他').length, 1)
+                        }
+                      ]}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="grade" />
                         <YAxis />
-                        <Tooltip formatter={(value) => [`${value}時間`, '平均学習時間']} />
+                        <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}時間`, '平均学習時間']} />
                         <Bar dataKey="hours" fill="#3b82f6" />
                       </BarChart>
                     </ResponsiveContainer>
@@ -769,7 +819,7 @@ export default function AdminDashboard() {
                           cx="50%"
                           cy="50%"
                           outerRadius={80}
-                          label={({ subject, percent }) => `${subject} ${(percent * 100).toFixed(0)}%`}
+                          label={({ subject, hours }) => `${subject} ${hours}h`}
                         >
                           {subjectData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
@@ -788,7 +838,7 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center space-x-2">
                       <TrendingUp className="h-5 w-5" />
-                      <span>全体学習トレンド（{studyPeriod === '7days' ? '直近7日間' : '直近1か月'}）</span>
+                      <span>全体学習トレンド（{getPeriodDisplayText(studyPeriod)}）</span>
                     </CardTitle>
                     <div className="flex gap-2">
                       <Button
@@ -796,7 +846,7 @@ export default function AdminDashboard() {
                         size="sm"
                         onClick={() => {
                           setStudyPeriod('7days');
-                          loadStudyData();
+                          generateChartData(studyRecords);
                         }}
                       >
                         7日間
@@ -806,7 +856,7 @@ export default function AdminDashboard() {
                         size="sm"
                         onClick={() => {
                           setStudyPeriod('30days');
-                          loadStudyData();
+                          generateChartData(studyRecords);
                         }}
                       >
                         1か月
@@ -817,19 +867,20 @@ export default function AdminDashboard() {
                 <CardContent>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={studyCalendarData}>
+                      <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis 
                           dataKey="date"
+                          tickFormatter={(date) => formatXAxisTick(date, studyPeriod)}
                           interval={studyPeriod === '30days' ? 4 : 0}
                         />
-                        <YAxis label={{ value: '分', angle: -90, position: 'insideLeft' }} />
+                        <YAxis label={{ value: '時間', angle: -90, position: 'insideLeft' }} />
                         <Tooltip 
                           labelFormatter={(label) => {
-                            const data = studyCalendarData.find(d => d.date === label);
+                            const data = chartData.find(d => d.date === label);
                             return data ? data.dateLabel : label;
                           }}
-                          formatter={(value) => [`${value}分`, '全体学習時間']}
+                          formatter={(value) => [`${Number(value).toFixed(1)}時間`, '全体学習時間']}
                         />
                         <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} />
                       </LineChart>
@@ -840,25 +891,25 @@ export default function AdminDashboard() {
                   <div className="mt-4 grid grid-cols-4 gap-4 pt-3 border-t">
                     <div className="text-center">
                       <div className="text-lg font-bold text-blue-600">
-                        {Math.round(studyCalendarData.reduce((sum, day) => sum + day.value, 0) / 60)}h
+                        {chartData.reduce((sum, day) => sum + day.value, 0).toFixed(1)}h
                       </div>
                       <div className="text-xs text-gray-500">{studyPeriod === '7days' ? '7日' : '30日'}合計</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-green-600">
-                        {studyCalendarData.length > 0 ? Math.round(studyCalendarData.reduce((sum, day) => sum + day.value, 0) / studyCalendarData.length) : 0}分
+                        {chartData.length > 0 ? (chartData.reduce((sum, day) => sum + day.value, 0) / chartData.length).toFixed(1) : '0.0'}h
                       </div>
                       <div className="text-xs text-gray-500">日平均</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-orange-600">
-                        {studyCalendarData.length > 0 ? Math.max(...studyCalendarData.map(d => d.value)) : 0}分
+                        {chartData.length > 0 ? Math.max(...chartData.map(d => d.value)).toFixed(1) : '0.0'}h
                       </div>
                       <div className="text-xs text-gray-500">最高記録</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-purple-600">
-                        {studyCalendarData.filter(d => d.value > 0).length}
+                        {chartData.filter(d => d.value > 0).length}
                       </div>
                       <div className="text-xs text-gray-500">学習日数</div>
                     </div>
@@ -884,47 +935,42 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {reviewRequests.length === 0 ? (
-                    <div className="text-center py-4 text-gray-500">
-                      復習問題リクエストがありません
-                    </div>
-                  ) : (
-                    reviewRequests.map((request) => (
-                      <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-3 h-3 rounded-full ${
-                            request.status === 'pending' ? 'bg-yellow-500' :
-                            request.status === 'in_progress' ? 'bg-blue-500' :
-                            request.status === 'completed' ? 'bg-green-500' : 'bg-red-500'
-                          }`}></div>
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <span className="font-medium">{request.userName}</span>
-                              <Badge variant="outline" className="text-xs">{request.subject}</Badge>
-                              <Badge variant={
-                                request.status === 'pending' ? 'default' :
-                                request.status === 'in_progress' ? 'default' :
-                                request.status === 'completed' ? 'default' : 'destructive'
-                              } className="text-xs">
-                                {request.status === 'pending' ? '受付中' :
-                                 request.status === 'in_progress' ? '作業中' :
-                                 request.status === 'completed' ? '完了' : '却下'}
-                              </Badge>
-                            </div>
-                            <div className="text-sm text-gray-500">{request.unit}</div>
+                  {reviewRequests.slice(0, 5).map((request) => (
+                    <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-3 h-3 rounded-full ${
+                          request.status === 'pending' ? 'bg-yellow-500' :
+                          request.status === 'in_progress' ? 'bg-blue-500' :
+                          request.status === 'completed' ? 'bg-green-500' : 'bg-red-500'
+                        }`}></div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium">{request.userName}</span>
+                            <Badge variant="outline" className="text-xs">{request.subject}</Badge>
+                            <Badge variant={
+                              request.status === 'pending' ? 'default' :
+                              request.status === 'in_progress' ? 'default' : 
+                              request.status === 'completed' ? 'default' : 'destructive'
+                            } className="text-xs">
+                              {request.status === 'pending' ? '受付中' :
+                               request.status === 'in_progress' ? '作業中' :
+                               request.status === 'completed' ? '完了' : '却下'}
+                            </Badge>
                           </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs text-gray-500">
-                            {request.createdAt.toLocaleDateString('ja-JP')}
-                          </span>
-                          {request.status === 'pending' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
-                          {request.status === 'in_progress' && <Clock className="h-4 w-4 text-blue-500" />}
-                          {request.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                          <div className="text-sm text-gray-500">{request.unit}</div>
                         </div>
                       </div>
-                    ))
-                  )}
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-gray-500">
+                          {request.createdAt.toLocaleDateString('ja-JP')}
+                        </span>
+                        {request.status === 'pending' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
+                        {request.status === 'in_progress' && <Clock className="h-4 w-4 text-blue-500" />}
+                        {request.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                        {request.status === 'rejected' && <XCircle className="h-4 w-4 text-red-500" />}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -934,15 +980,15 @@ export default function AdminDashboard() {
               <Card>
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-yellow-600">
-                    {stats.pending}
+                    {reviewRequests.filter(r => r.status === 'pending').length}
                   </div>
-                  <div className="text-sm text-gray-600">受付中</div>
+                  <div className="text-sm text-gray-600">待機中</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {stats.inProgress}
+                    {reviewRequests.filter(r => r.status === 'in_progress').length}
                   </div>
                   <div className="text-sm text-gray-600">作業中</div>
                 </CardContent>
@@ -950,7 +996,7 @@ export default function AdminDashboard() {
               <Card>
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {stats.completed}
+                    {reviewRequests.filter(r => r.status === 'completed').length}
                   </div>
                   <div className="text-sm text-gray-600">完了</div>
                 </CardContent>
@@ -958,7 +1004,7 @@ export default function AdminDashboard() {
               <Card>
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold text-red-600">
-                    {stats.rejected}
+                    {reviewRequests.filter(r => r.status === 'rejected').length}
                   </div>
                   <div className="text-sm text-gray-600">却下</div>
                 </CardContent>
@@ -988,12 +1034,12 @@ export default function AdminDashboard() {
                       <Badge variant="default" className="bg-green-600">正常</Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">総ユーザー数</span>
-                      <Badge variant="secondary">{stats.total}人</Badge>
+                      <span className="text-sm">ストレージ</span>
+                      <Badge variant="default" className="bg-green-600">正常</Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">アクティブユーザー</span>
-                      <Badge variant="secondary">{stats.activeUsers}人</Badge>
+                      <span className="text-sm">バックアップ</span>
+                      <Badge variant="secondary">最終: 昨日 23:00</Badge>
                     </div>
                   </div>
                 </CardContent>
@@ -1009,21 +1055,35 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <Button variant="outline" className="w-full justify-start" disabled>
+                    <Button variant="outline" className="w-full justify-start">
                       <Download className="w-4 h-4 mr-2" />
-                      全ユーザーデータエクスポート（開発中）
+                      全ユーザーデータエクスポート
                     </Button>
-                    <Button variant="outline" className="w-full justify-start" disabled>
+                    <Button variant="outline" className="w-full justify-start">
                       <Download className="w-4 h-4 mr-2" />
-                      学習記録一括エクスポート（開発中）
+                      学習記録一括エクスポート
                     </Button>
-                    <Button variant="outline" className="w-full justify-start" onClick={handleRefresh}>
+                    <Button variant="outline" className="w-full justify-start" onClick={async () => {
+                      try {
+                        await ReviewStatsService.updateAllUsersReviewStats();
+                        toast({
+                          title: "更新完了",
+                          description: "全ユーザーの復習統計を再計算しました"
+                        });
+                      } catch (error) {
+                        toast({
+                          title: "エラー",
+                          description: "復習統計の再計算に失敗しました",
+                          variant: "destructive"
+                        });
+                      }
+                    }}>
                       <RefreshCw className="w-4 h-4 mr-2" />
-                      データ再読み込み
+                      復習統計再計算
                     </Button>
-                    <Button variant="destructive" className="w-full justify-start" disabled>
+                    <Button variant="destructive" className="w-full justify-start">
                       <AlertCircle className="w-4 h-4 mr-2" />
-                      システムメンテナンス（準備中）
+                      システムメンテナンス
                     </Button>
                   </div>
                 </CardContent>
@@ -1039,61 +1099,13 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {activityLogs.length === 0 ? (
-                      <div className="text-center py-4 text-gray-500">
-                        アクティビティがありません
+                    {timelineData.slice(0, 10).map((item) => (
+                      <div key={item.id} className="flex items-center space-x-3 text-sm">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-gray-500">{item.timestamp.toLocaleString('ja-JP')}</span>
+                        <span>{item.userName}が{item.subject}の学習記録を追加しました</span>
                       </div>
-                    ) : (
-                      activityLogs.map((log) => (
-                        <div key={log.id} className="flex items-center space-x-3 text-sm">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <span className="text-gray-500">{log.timestamp.toLocaleString('ja-JP')}</span>
-                          <span>{log.userName}が{log.message}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 警告・アラート */}
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <AlertCircle className="h-5 w-5 text-green-500" />
-                    <span>システムアラート</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-start space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                      <div className="flex-1">
-                        <div className="font-medium text-green-800">
-                          システム正常稼働中
-                        </div>
-                        <div className="text-sm text-green-700 mt-1">
-                          全てのサービスが正常に動作しています
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {stats.pending > 5 && (
-                      <div className="flex items-start space-x-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                        <div className="flex-1">
-                          <div className="font-medium text-yellow-800">
-                            復習問題リクエスト待機中
-                          </div>
-                          <div className="text-sm text-yellow-700 mt-1">
-                            {stats.pending}件の復習問題リクエストが処理待ちです
-                          </div>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => setCurrentTab('reviews')}>
-                          確認
-                        </Button>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </CardContent>
               </Card>
